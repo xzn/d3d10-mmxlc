@@ -1,0 +1,24 @@
+[submodule "glslang/glslang"]
+	path = glslang/glslang
+	url = https://github.com/KhronosGroup/glslang.git
+[submodule "HLSLcc"]
+	path = HLSLcc
+	url = https://github.com/Unity-Technologies/HLSLcc.git
+[submodule "imgui"]
+	path = imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "minhook"]
+	path = minhook
+	url = https://github.com/TsudaKageyu/minhook.git
+[submodule "RetroArch/RetroArch"]
+	path = RetroArch/RetroArch
+	url = https://github.com/libretro/RetroArch.git
+[submodule "slang-shaders"]
+	path = slang-shaders
+	url = https://github.com/libretro/slang-shaders.git
+[submodule "smhasher"]
+	path = smhasher
+	url = https://github.com/aappleby/smhasher.git
+[submodule "SPIRV-Cross"]
+	path = SPIRV-Cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross.git

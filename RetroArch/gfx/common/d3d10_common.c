@@ -1,0 +1,1 @@
+../../RetroArch/gfx/common/d3d10_common.c

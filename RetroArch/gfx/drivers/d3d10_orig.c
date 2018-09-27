@@ -1,0 +1,1 @@
+../../RetroArch/gfx/drivers/d3d10.c
