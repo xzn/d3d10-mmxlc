@@ -199,7 +199,7 @@ ifeq ($(o3),0)
 	o3_opt := -g
 	lto := 0
 else
-	o3_opt := -O3 -DNDEBUG
+	o3_opt := -O3 -DNDEBUG -s
 endif
 
 ifeq ($(lto),0)

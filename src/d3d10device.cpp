@@ -60,7 +60,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
 
         if (default_config->slang_shader_updated) {
             if (!d3d10) {
-                if (!(d3d10 = my_d3d10_gfx_init(inner))) {
+                if (!(d3d10 = my_d3d10_gfx_init(inner, TEX_FORMAT))) {
                     Overlay::push_text("Failed to initialize slang shader");
                 }
             }
@@ -79,7 +79,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
 
         if (default_config->slang_shader_3d_updated) {
             if (!d3d10_3d) {
-                if (!(d3d10_3d = my_d3d10_gfx_init(inner))) {
+                if (!(d3d10_3d = my_d3d10_gfx_init(inner, TEX_FORMAT))) {
                     Overlay::push_text("Failed to initialize slang shader 3d");
                 }
             }
@@ -117,6 +117,7 @@ void MyID3D10Device::resize_buffers(UINT width, UINT height) {
     clear_filter();
     update_config();
     filter_temp_init();
+    frame_count = 0;
 }
 
 MyID3D10Device::TextureAndViews::TextureAndViews() :
@@ -424,7 +425,7 @@ void STDMETHODCALLTYPE MyID3D10Device::VSSetConstantBuffers(
         buffers[i] = ppConstantBuffers[i] ? ((MyID3D10Buffer *)ppConstantBuffers[i])->inner : NULL;
     }
     if (NumBuffers) {
-        memcpy(current_vscbs + StartSlot, ppConstantBuffers, sizeof(ppConstantBuffers[0]) * NumBuffers);
+        memcpy(current_vscbs + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
     }
     inner->VSSetConstantBuffers(
         StartSlot,
@@ -499,6 +500,7 @@ void STDMETHODCALLTYPE MyID3D10Device::VSSetShader(
     LOG_MFUN(_,
         LOG_ARG(pVertexShader)
     );
+    current_vs = pVertexShader;
     inner->VSSetShader(pVertexShader);
 }
 
@@ -660,10 +662,10 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
                     set_rtv((*v_it)->rtv);
                 };
                 set_it_rtv();
-                auto set_it_ps_cbs = [&] {
+                auto set_it_pscbs = [&] {
                     inner->PSSetConstantBuffers(0, 1, &(*v_it)->ps_cb);
                 };
-                set_it_ps_cbs();
+                set_it_pscbs();
                 inner->Draw(VertexCount, filter_state.start_vertex_location);
                 auto v_it_prev = v_it;
                 auto set_it_prev_srv = [&] {
@@ -673,7 +675,7 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
                     set_it_rtv();
                     set_it_prev_srv();
                     set_it_viewport();
-                    set_it_ps_cbs();
+                    set_it_pscbs();
                     inner->Draw(VertexCount, filter_state.start_vertex_location);
                     v_it_prev = v_it;
                 }
@@ -708,39 +710,51 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
 
         if (filter_state.t1) {
             if (filter_ss) {
-                video_viewport_t vp = {
-                    .x = current_vp.TopLeftX,
-                    .y = current_vp.TopLeftY,
-                    .width = current_vp.Width,
-                    .height = current_vp.Height,
-                    .full_width = orig_sc_width,
-                    .full_height = orig_sc_height
-                };
-                my_d3d10_update_viewport(d3d10, rtv->inner, &vp);
                 d3d10_texture_t texture = {};
-                texture.handle = ((MyID3D10Texture2D *)filter_state.srv->resource)->inner;
-                texture.desc = ((MyID3D10Texture2D *)filter_state.srv->resource)->desc;
-                my_d3d10_gfx_frame(d3d10, &texture, frame_count);
+                MyID3D10Texture2D *my_texture = (MyID3D10Texture2D *)filter_state.srv->resource;
+                texture.handle = my_texture->inner;
+                texture.desc = my_texture->desc;
+                texture.view = filter_state.srv->inner;
+                if (texture.desc.Format == TEX_FORMAT) {
+                    video_viewport_t vp = {
+                        .x = current_vp.TopLeftX,
+                        .y = current_vp.TopLeftY,
+                        .width = current_vp.Width,
+                        .height = current_vp.Height,
+                        .full_width = orig_sc_width,
+                        .full_height = orig_sc_height
+                    };
+                    my_d3d10_update_viewport(d3d10, rtv->inner, &vp);
+                    my_d3d10_gfx_frame(d3d10, &texture, frame_count);
 
-                inner->IASetPrimitiveTopology(current_pt);
-                inner->OMSetBlendState(
-                    current_bs.pBlendState,
-                    current_bs.BlendFactor,
-                    current_bs.SampleMask
-                );
-                inner->IASetVertexBuffers(
-                    0,
-                    D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT,
-                    current_vbs.ppVertexBuffers,
-                    current_vbs.pStrides,
-                    current_vbs.pOffsets
-                );
-                inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_pscbs);
-                inner->VSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_vscbs);
-                restore_ps();
-                restore_pssss();
-                restore_vps();
-                restore_pssrvs();
+                    inner->IASetPrimitiveTopology(current_pt);
+                    inner->IASetVertexBuffers(
+                        0,
+                        D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT,
+                        current_vbs.ppVertexBuffers,
+                        current_vbs.pStrides,
+                        current_vbs.pOffsets
+                    );
+                    inner->OMSetBlendState(
+                        current_bs.pBlendState,
+                        current_bs.BlendFactor,
+                        current_bs.SampleMask
+                    );
+                    inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_pscbs);
+                    inner->VSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_vscbs);
+                    inner->IASetInputLayout(current_il);
+                    restore_ps();
+                    inner->VSSetShader(current_vs);
+                    restore_pssss();
+                    restore_vps();
+                    restore_pssrvs();
+                } else {
+                    set_psss(filter_temp.sampler_linear);
+                    set_srv(texture.view);
+                    inner->Draw(VertexCount, StartVertexLocation);
+                    restore_pssss();
+                    restore_pssrvs();
+                }
             } else if (config.enhanced) {
                 if (filter_state.x4) {
                     draw_enhanced(filter_temp.tex_1_x4);
@@ -806,7 +820,7 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetConstantBuffers(
         buffers[i] = ppConstantBuffers[i] ? ((MyID3D10Buffer *)ppConstantBuffers[i])->inner : NULL;
     }
     if (NumBuffers) {
-        memcpy(current_pscbs + StartSlot, ppConstantBuffers, sizeof(ppConstantBuffers[0]) * NumBuffers);
+        memcpy(current_pscbs + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
     }
     inner->PSSetConstantBuffers(
         StartSlot,
@@ -821,6 +835,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetInputLayout(
     LOG_MFUN(_,
         LOG_ARG(pInputLayout)
     );
+    current_il = pInputLayout;
     inner->IASetInputLayout(pInputLayout);
 }
 
@@ -844,7 +859,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetVertexBuffers(
     }
 if constexpr (ENABLE_SLANG_SHADER) {
     if (NumBuffers) {
-        memcpy(current_vbs.ppVertexBuffers + StartSlot, ppVertexBuffers, sizeof(ppVertexBuffers[0]) * NumBuffers);
+        memcpy(current_vbs.ppVertexBuffers + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
         memcpy(current_vbs.pStrides + StartSlot, pStrides, sizeof(pStrides[0]) * NumBuffers);
         memcpy(current_vbs.pOffsets + StartSlot, pOffsets, sizeof(pOffsets[0]) * NumBuffers);
     }

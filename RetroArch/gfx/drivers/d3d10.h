@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-d3d10_video_t *my_d3d10_gfx_init(ID3D10Device *device);
+d3d10_video_t *my_d3d10_gfx_init(ID3D10Device *device, DXGI_FORMAT format);
 void my_d3d10_gfx_free(d3d10_video_t *d3d10);
 bool my_d3d10_gfx_set_shader(d3d10_video_t *d3d10, const char* path);
 bool my_d3d10_gfx_frame(d3d10_video_t *d3d10, d3d10_texture_t *texture, UINT64 frame_count);

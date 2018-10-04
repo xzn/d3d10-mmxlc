@@ -1,8 +1,8 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#define ENABLE_LOGGER 0
-#define ENABLE_SLANG_SHADER 0
+#define ENABLE_LOGGER 1
+#define ENABLE_SLANG_SHADER 1
 
 #define UNICODE
 #define _UNICODE

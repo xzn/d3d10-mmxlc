@@ -116,6 +116,8 @@ class MyID3D10Device : public ID3D10Device {
 
 public:
     MyID3D10PixelShader *current_ps = NULL;
+    ID3D10VertexShader *current_vs = NULL;
+    ID3D10InputLayout *current_il = NULL;
     MyID3D10SamplerState *current_psss = NULL;
     ID3D10SamplerState *current_pssss[MAX_SAMPLERS] = {};
     MyID3D10RenderTargetView *current_rtv = NULL;

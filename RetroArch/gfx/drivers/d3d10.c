@@ -1,14 +1,13 @@
 #include "d3d10.h"
 #include "d3d10_orig.c"
 
-d3d10_video_t *my_d3d10_gfx_init(ID3D10Device *device) {
+d3d10_video_t *my_d3d10_gfx_init(ID3D10Device *device, DXGI_FORMAT format) {
     d3d10_video_t *d3d10 = (d3d10_video_t *)calloc(1, sizeof(d3d10_video_t));
     if (!d3d10) return NULL;
 
     d3d10->device = device;
-    d3d10->format = DXGI_FORMAT_B8G8R8X8_UNORM;
 
-    d3d10->frame.texture[0].desc.Format = d3d10->format;
+    d3d10->frame.texture[0].desc.Format = format;
     d3d10->frame.texture[0].desc.Usage  = D3D10_USAGE_DEFAULT;
     d3d10->frame.texture[0].desc.Width  = 4;
     d3d10->frame.texture[0].desc.Height = 4;
