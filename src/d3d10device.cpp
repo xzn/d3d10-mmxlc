@@ -553,7 +553,8 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
     MyID3D10Texture2D *srv_tex = (MyID3D10Texture2D *)srv->resource;
 
     filter_next = filter_next && srv_tex == filter_state.rtv_tex;
-    bool x4;
+    bool x4 = false;
+    bool x8 = false;
     D3D10_TEXTURE2D_DESC &srv_tex_desc = srv_tex->desc;
     if (!filter_next) {
         if (
@@ -566,6 +567,11 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
             srv_tex_desc.Height == X4_HEIGHT
         ) { // PlayStation
             x4 = true;
+        } else if (
+            srv_tex_desc.Width == orig_render_3d_width &&
+            srv_tex_desc.Height == orig_render_3d_height
+        ) { // PlayStation 2
+            x8 = true;
         } else {
              goto end;
         }
@@ -585,7 +591,10 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
     }
 
     D3D10_TEXTURE2D_DESC &rtv_tex_desc = rtv_tex->desc;
-    if (filter_next) {
+
+    x8 = x8 && rtv_tex_desc.Width == orig_sc_width && rtv_tex_desc.Height == orig_sc_height;
+
+    if (filter_next || x8) {
         if (
             rtv_tex_desc.Width != orig_sc_width ||
             rtv_tex_desc.Height != orig_sc_height
@@ -707,54 +716,69 @@ void STDMETHODCALLTYPE MyID3D10Device::Draw(
             restore_pssrvs();
             restore_pssss();
         };
+        auto draw_ss = [&](d3d10_video_t *d3d10, MyID3D10ShaderResourceView *srv, D3D10_VIEWPORT &current_vp) {
+            d3d10_texture_t texture = {};
+            MyID3D10Texture2D *my_texture = (MyID3D10Texture2D *)srv->resource;
+            texture.handle = my_texture->inner;
+            texture.desc = my_texture->desc;
+            if (texture.desc.Format == TEX_FORMAT) {
+                video_viewport_t vp = {
+                    .x = current_vp.TopLeftX,
+                    .y = current_vp.TopLeftY,
+                    .width = current_vp.Width,
+                    .height = current_vp.Height,
+                    .full_width = orig_sc_width,
+                    .full_height = orig_sc_height
+                };
+                my_d3d10_update_viewport(d3d10, rtv->inner, &vp);
+                my_d3d10_gfx_frame(d3d10, &texture, frame_count);
 
-        if (filter_state.t1) {
+                inner->IASetPrimitiveTopology(current_pt);
+                inner->IASetVertexBuffers(
+                    0,
+                    D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT,
+                    current_vbs.ppVertexBuffers,
+                    current_vbs.pStrides,
+                    current_vbs.pOffsets
+                );
+                inner->OMSetBlendState(
+                    current_bs.pBlendState,
+                    current_bs.BlendFactor,
+                    current_bs.SampleMask
+                );
+                inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_pscbs);
+                inner->VSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_vscbs);
+                inner->IASetInputLayout(current_il);
+                restore_ps();
+                inner->VSSetShader(current_vs);
+                inner->GSSetShader(current_gs);
+                restore_pssss();
+                restore_vps();
+                restore_pssrvs();
+            } else {
+                set_psss(filter_temp.sampler_linear);
+                set_srv(srv->inner);
+                inner->Draw(VertexCount, StartVertexLocation);
+                restore_pssss();
+                restore_pssrvs();
+            }
+        };
+
+        if (x8) {
+            if (d3d10_3d && d3d10_3d->shader_preset) {
+                D3D10_VIEWPORT vp = {
+                    .TopLeftX = (INT)(orig_sc_width - orig_render_3d_width) / 2,
+                    .TopLeftY = 0,
+                    .Width = orig_render_3d_width,
+                    .Height = orig_render_3d_height
+                };
+                draw_ss(d3d10_3d, srv, vp);
+                filter_next = true;
+            }
+            goto end;
+        } else if (filter_state.t1) {
             if (filter_ss) {
-                d3d10_texture_t texture = {};
-                MyID3D10Texture2D *my_texture = (MyID3D10Texture2D *)filter_state.srv->resource;
-                texture.handle = my_texture->inner;
-                texture.desc = my_texture->desc;
-                texture.view = filter_state.srv->inner;
-                if (texture.desc.Format == TEX_FORMAT) {
-                    video_viewport_t vp = {
-                        .x = current_vp.TopLeftX,
-                        .y = current_vp.TopLeftY,
-                        .width = current_vp.Width,
-                        .height = current_vp.Height,
-                        .full_width = orig_sc_width,
-                        .full_height = orig_sc_height
-                    };
-                    my_d3d10_update_viewport(d3d10, rtv->inner, &vp);
-                    my_d3d10_gfx_frame(d3d10, &texture, frame_count);
-
-                    inner->IASetPrimitiveTopology(current_pt);
-                    inner->IASetVertexBuffers(
-                        0,
-                        D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT,
-                        current_vbs.ppVertexBuffers,
-                        current_vbs.pStrides,
-                        current_vbs.pOffsets
-                    );
-                    inner->OMSetBlendState(
-                        current_bs.pBlendState,
-                        current_bs.BlendFactor,
-                        current_bs.SampleMask
-                    );
-                    inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_pscbs);
-                    inner->VSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_vscbs);
-                    inner->IASetInputLayout(current_il);
-                    restore_ps();
-                    inner->VSSetShader(current_vs);
-                    restore_pssss();
-                    restore_vps();
-                    restore_pssrvs();
-                } else {
-                    set_psss(filter_temp.sampler_linear);
-                    set_srv(texture.view);
-                    inner->Draw(VertexCount, StartVertexLocation);
-                    restore_pssss();
-                    restore_pssrvs();
-                }
+                draw_ss(d3d10, filter_state.srv, current_vp);
             } else if (config.enhanced) {
                 if (filter_state.x4) {
                     draw_enhanced(filter_temp.tex_1_x4);
@@ -945,6 +969,7 @@ void STDMETHODCALLTYPE MyID3D10Device::GSSetShader(
     LOG_MFUN(_,
         LOG_ARG(pShader)
     );
+    current_gs = pShader;
     inner->GSSetShader(pShader);
 }
 
