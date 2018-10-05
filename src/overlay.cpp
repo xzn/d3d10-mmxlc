@@ -45,7 +45,7 @@ Overlay::Overlay(
     pDevice->AddRef();
     pSwapChain->AddRef();
 
-    assert(QueryPerformanceFrequency((LARGE_INTEGER *)&TicksPerSecond));
+    QueryPerformanceFrequency((LARGE_INTEGER *)&TicksPerSecond);
 
     imgui_context = ImGui::CreateContext();
     io = &ImGui::GetIO();
@@ -124,11 +124,11 @@ HRESULT Overlay::present(
         ImGui_ImplDX10_NewFrame();
 
         if (!Time) {
-            assert(QueryPerformanceCounter((LARGE_INTEGER *)&Time));
+            QueryPerformanceCounter((LARGE_INTEGER *)&Time);
             io->DeltaTime = 1.0f/60.0f;
         } else {
             UINT64 current_time;
-            assert(QueryPerformanceCounter((LARGE_INTEGER *)&current_time));
+            QueryPerformanceCounter((LARGE_INTEGER *)&current_time);
             io->DeltaTime = (float)(current_time - Time) / TicksPerSecond;
             Time = current_time;
         }

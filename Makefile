@@ -235,7 +235,7 @@ else
 endif
 
 $(dll): $(obj_all) dinput8.def
-	g++ $(color_opt) -o $@ $+ $(lto_opt) -shared -static -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
+	g++ $(color_opt) -o $@ $+ $(lto_opt) -shared -static -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
 
 obj/%.o: src/%.cpp | $(dir)
 	$(cxx) -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
