@@ -140,6 +140,32 @@ libretro-common/compat/compat_getopt.o \
 libretro-common/compat/compat_strcasestr.o \
 libretro-common/compat/compat_strl.o \
 libretro-common/formats/image_texture.o \
+libretro-common/formats/xml/rxml.o \
+libretro-common/formats/tga/rtga.o \
+libretro-common/formats/png/rpng.o \
+libretro-common/formats/png/rpng_encode.o \
+libretro-common/formats/jpeg/rjpeg.o \
+libretro-common/formats/bmp/rbmp.o \
+libretro-common/file/archive_file.o \
+libretro-common/streams/trans_stream.o \
+libretro-common/streams/trans_stream_pipe.o \
+libretro-common/file/archive_file_zlib.o \
+libretro-common/streams/trans_stream_zlib.o \
+deps/libz/adler32.o \
+deps/libz/compress.o \
+deps/libz/libz-crc32.o \
+deps/libz/deflate.o \
+deps/libz/gzclose.o \
+deps/libz/gzlib.o \
+deps/libz/gzread.o \
+deps/libz/gzwrite.o \
+deps/libz/inffast.o \
+deps/libz/inflate.o \
+deps/libz/inftrees.o \
+deps/libz/trees.o \
+deps/libz/uncompr.o \
+deps/libz/zutil.o \
+tasks/task_decompress.o \
 gfx/common/win32_common.o \
 frontend/drivers/platform_win32.o \
 gfx/drivers/gdi_gfx.o \
@@ -177,7 +203,7 @@ gfx/drivers_shader/slang_reflection.o \
 deps/glslang/glslang.o
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
 retroarch_dir := $(sort $(dir $(retroarch_obj)))
-retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN -DHAVE_D3D10 -DHAVE_DINPUT -DHAVE_SLANG -DHAVE_GLSLANG -DHAVE_SPIRV_CROSS -DENABLE_HLSL -IRetroArch/RetroArch/libretro-common/include -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
+retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN -DHAVE_D3D10 -DHAVE_DINPUT -DHAVE_SLANG -DHAVE_GLSLANG -DHAVE_SPIRV_CROSS -DENABLE_HLSL -DHAVE_RTGA -DHAVE_RPNG -DHAVE_RJPEG -DHAVE_RBMP -DHAVE_ZLIB -DWANT_ZLIB -DHAVE_COMPRESSION -IRetroArch/RetroArch/libretro-common/include -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
 retroarch_cc = gcc $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) $(retroarch_flg) -Wno-implicit-function-declaration
 retroarch_cxx = g++ $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
 src := $(wildcard src/*.cpp)
