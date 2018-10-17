@@ -17,6 +17,7 @@ struct Config {
     UINT render_3d_height = 0;
     UINT display_width = 0;
     UINT display_height = 0;
+    bool render_display_updated = false;
 
     CRITICAL_SECTION cs;
     Config();

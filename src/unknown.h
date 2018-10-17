@@ -2,7 +2,7 @@
 #define UNKNOWN_H
 
 #define IUNKNOWN_DECL(n, b) \
-    b *const inner; \
+    b *inner; \
     DWORD rc; \
  \
     HRESULT STDMETHODCALLTYPE QueryInterface( \
@@ -37,7 +37,7 @@
     ULONG STDMETHODCALLTYPE n::Release() { \
         unsigned ret = InterlockedDecrement(&rc); \
         if (rc == 0) { \
-            inner->Release(); \
+            if (inner) inner->Release(); \
             delete this; \
         } \
         LOG_MFUN(_, ret); \

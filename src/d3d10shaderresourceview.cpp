@@ -1,4 +1,5 @@
 #include "d3d10shaderresourceview.h"
+#include "d3d10texture2d.h"
 #include "log.h"
 
 #define LOGGER default_logger
@@ -20,11 +21,17 @@ MyID3D10ShaderResourceView::MyID3D10ShaderResourceView(
     );
     current_srvs_map.emplace(*inner, this);
     *inner = this;
+    resource->AddRef();
 }
 
 MyID3D10ShaderResourceView::~MyID3D10ShaderResourceView() {
     LOG_MFUN();
     current_srvs_map.erase(inner);
+    if (desc.ViewDimension == D3D10_SRV_DIMENSION_TEXTURE2D) {
+        MyID3D10Texture2D *texture_2d = (MyID3D10Texture2D *)resource;
+        texture_2d->srvs.erase(this);
+    }
+    resource->Release();
 }
 
 void STDMETHODCALLTYPE MyID3D10ShaderResourceView::GetDesc(

@@ -222,6 +222,8 @@ void load_ini(LPCTSTR file_name) {
     GetPrivateProfileString(_T(STRINGIFY(SECTION)), _T(#n), NULL, returned_string, n_size, (_tstring(_T(".\\")) + file_name).c_str()); \
 } while (0)
 
+    EnterCriticalSection(&config->cs);
+
 #define SECTION logging
 
 if constexpr (ENABLE_LOGGER) {
@@ -256,11 +258,6 @@ if constexpr (ENABLE_LOGGER) {
     config->log_frame_hotkey = ini_parse_vk_comb(returned_string);
     if (*returned_string && !config->log_frame_hotkey.size()) {
         Overlay::push_text("Invalid hotkey for log frame");
-    }
-
-    for (Overlay *overlay : *default_overlays) {
-        overlay->log_toggle_hotkey = config->log_toggle_hotkey;
-        overlay->log_frame_hotkey = config->log_frame_hotkey;
     }
 }
 
@@ -308,8 +305,6 @@ if constexpr (ENABLE_LOGGER) {
 #endif
 
 if constexpr (ENABLE_SLANG_SHADER) {
-    EnterCriticalSection(&config->cs);
-
     GET_INI_VALUE(slang_shader);
     {
         std::string val;
@@ -329,11 +324,40 @@ if constexpr (ENABLE_SLANG_SHADER) {
             config->slang_shader_3d_updated = true;
         }
     }
-
-    LeaveCriticalSection(&config->cs);
 }
 
+#define GET_LONG_VALUE(v) do { \
+    LPTSTR endptr; \
+    v = _tcstol(returned_string, &endptr, 0); \
+    if (returned_string + _tcslen(returned_string) != endptr) v = -1; \
+} while (0)
+
+#define GET_SET_CONFIG_UINT_VALUE(v) do { \
+    GET_INI_VALUE(v); \
+    long v; \
+    GET_LONG_VALUE(v); \
+    if (v < 0) { \
+        Overlay::push_text("Invalid [" STRINGIFY(SECTION) "]." STRINGIFY(v) " value"); \
+        v = 0; \
+    } \
+    if (config->v != (UINT)v) { \
+        config->v = v; \
+        config->UPDATED_VAR = true; \
+    } \
+} while (0)
+
+#define UPDATED_VAR render_display_updated
+if constexpr (ENABLE_CUSTOM_RESOLUTION) {
+    GET_SET_CONFIG_UINT_VALUE(render_3d_width);
+    GET_SET_CONFIG_UINT_VALUE(render_3d_height);
+    GET_SET_CONFIG_UINT_VALUE(display_width);
+    GET_SET_CONFIG_UINT_VALUE(display_height);
+}
+#undef UPDATED_VAR
+
 #undef SECTION
+
+    LeaveCriticalSection(&config->cs);
 }
 
 void ini_file_init(HANDLE &file, LPCTSTR file_name) {

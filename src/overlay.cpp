@@ -36,12 +36,6 @@ Overlay::Overlay(
     log_frame_hotkey_active(false),
     log_frame_active(false)
 {
-    Config *config = default_config;
-    if (config) {
-        log_toggle_hotkey = config->log_toggle_hotkey;
-        log_frame_hotkey = config->log_frame_hotkey;
-    }
-
     pDevice->AddRef();
     pSwapChain->AddRef();
 
@@ -84,8 +78,12 @@ HRESULT Overlay::present(
         if (logger) logger->stop();
     }
 
-    if (hwnd == GetForegroundWindow()) {
-        if (hotkey_active(log_toggle_hotkey)) {
+    Config *config = default_config;
+
+    if (config && hwnd == GetForegroundWindow()) {
+        EnterCriticalSection(&config->cs);
+
+        if (hotkey_active(config->log_toggle_hotkey)) {
             if (!log_toggle_hotkey_active) {
                 log_toggle_hotkey_active = true;
                 if (logger) {
@@ -102,7 +100,7 @@ HRESULT Overlay::present(
         } else {
             log_toggle_hotkey_active = false;
         }
-        if (hotkey_active(log_frame_hotkey)) {
+        if (hotkey_active(config->log_frame_hotkey)) {
             if (!log_frame_hotkey_active) {
                 log_frame_hotkey_active = true;
                 if (logger) {
@@ -115,6 +113,8 @@ HRESULT Overlay::present(
         } else {
             log_frame_hotkey_active = false;
         }
+
+        LeaveCriticalSection(&config->cs);
     } else {
         reset_texts_timings();
     }
@@ -205,7 +205,9 @@ HRESULT Overlay::resize_buffers(
         format,
         flags
     );
-    set_display_size(ImVec2(width, height));
+    if (ret == S_OK) {
+        set_display_size(ImVec2(width, height));
+    }
     create_render_target();
 
     LeaveCriticalSection(&texts_cs);

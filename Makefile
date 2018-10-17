@@ -118,6 +118,7 @@ libretro-common/audio/dsp_filter.o \
 libretro-common/audio/resampler/drivers/sinc_resampler.o \
 libretro-common/audio/resampler/drivers/nearest_resampler.o \
 libretro-common/audio/resampler/drivers/null_resampler.o \
+libretro-common/utils/md5.o \
 location/drivers/nulllocation.o \
 camera/drivers/nullcamera.o \
 wifi/drivers/nullwifi.o \
@@ -235,10 +236,10 @@ else
 endif
 
 $(dll): $(obj_all) dinput8.def
-	g++ $(color_opt) -o $@ $+ $(lto_opt) -shared -static -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
+	g++ $(color_opt) -o $@ $+ $(o3_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
 
 obj/%.o: src/%.cpp | $(dir)
-	$(cxx) -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
+	$(cxx) -Werror -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
 
 obj/smhasher/%.o: smhasher/src/%.cpp | $(smhasher_dir)
 	$(cxx)

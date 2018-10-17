@@ -14,7 +14,10 @@ class MyID3D10Buffer;
 class MyID3D10SamplerState;
 class MyID3D10RenderTargetView;
 class MyID3D10ShaderResourceView;
+class MyID3D10DepthStencilView;
 class MyID3D10Texture2D;
+class TextureAndViews;
+class TextureViewsAndBuffer;
 
 class MyID3D10Device : public ID3D10Device {
     d3d10_video_t *d3d10 = NULL;
@@ -40,20 +43,6 @@ class MyID3D10Device : public ID3D10Device {
     void update_config();
 
     static const DXGI_FORMAT TEX_FORMAT;
-    struct TextureAndViews {
-        ID3D10Texture2D *tex;
-        ID3D10ShaderResourceView *srv;
-        ID3D10RenderTargetView *rtv;
-        UINT width;
-        UINT height;
-        TextureAndViews();
-        ~TextureAndViews();
-    };
-    struct TextureViewsAndBuffer : TextureAndViews {
-        ID3D10Buffer *ps_cb;
-        TextureViewsAndBuffer();
-        ~TextureViewsAndBuffer();
-    };
     void create_sampler(
         D3D10_FILTER filter,
         ID3D10SamplerState *&sampler
@@ -61,7 +50,8 @@ class MyID3D10Device : public ID3D10Device {
     void create_texture(
         UINT width,
         UINT height,
-        ID3D10Texture2D *&texture
+        ID3D10Texture2D *&texture,
+        DXGI_FORMAT format = TEX_FORMAT
     );
     void create_texture_mul(
         UINT &orig_width,
@@ -70,14 +60,28 @@ class MyID3D10Device : public ID3D10Device {
     );
     void create_rtv(
         ID3D10Texture2D *tex,
-        ID3D10RenderTargetView *&rtv
+        ID3D10RenderTargetView *&rtv,
+        DXGI_FORMAT format = TEX_FORMAT
     );
     void create_srv(
         ID3D10Texture2D *tex,
-        ID3D10ShaderResourceView *&srv
+        ID3D10ShaderResourceView *&srv,
+        DXGI_FORMAT format = TEX_FORMAT
+    );
+    void create_dsv(
+        ID3D10Texture2D *tex,
+        ID3D10DepthStencilView *&dsv,
+        DXGI_FORMAT format
+    );
+    bool get_render_tex_views(
+        MyID3D10Texture2D *tex,
+        UINT width,
+        UINT height,
+        UINT orig_width,
+        UINT orig_height
     );
     void create_tex_and_views_nn(
-        TextureAndViews *tex_views,
+        TextureAndViews *tex,
         UINT orig_width,
         UINT orig_height
     );
@@ -90,8 +94,6 @@ class MyID3D10Device : public ID3D10Device {
     );
     void create_tex_and_view_1_v(
         std::vector<TextureViewsAndBuffer *> &tex_v,
-        UINT width,
-        UINT height,
         UINT orig_width,
         UINT orig_height
     );
@@ -107,14 +109,16 @@ class MyID3D10Device : public ID3D10Device {
     void filter_temp_init();
     void filter_temp_shutdown();
 
-    UINT orig_sc_width = 0;
-    UINT orig_sc_height = 0;
-    UINT orig_render_width = 0;
-    UINT orig_render_height = 0;
-    UINT orig_render_3d_width = 0;
-    UINT orig_render_3d_height = 0;
+    struct Size {
+        UINT sc_width;
+        UINT sc_height;
+        UINT render_width;
+        UINT render_height;
+        UINT render_3d_width;
+        UINT render_3d_height;
+        void resize(UINT width, UINT height);
+    } orig_size = {}, current_size = {};
 
-public:
     MyID3D10PixelShader *current_ps = NULL;
     ID3D10VertexShader *current_vs = NULL;
     ID3D10GeometryShader *current_gs = NULL;
@@ -122,7 +126,7 @@ public:
     MyID3D10SamplerState *current_psss = NULL;
     ID3D10SamplerState *current_pssss[MAX_SAMPLERS] = {};
     MyID3D10RenderTargetView *current_rtv = NULL;
-    ID3D10DepthStencilView *current_dsv = NULL;
+    MyID3D10DepthStencilView *current_dsv = NULL;
     MyID3D10ShaderResourceView *current_pssrv = NULL;
     ID3D10ShaderResourceView *current_pssrvs[MAX_SHADER_RESOURCES] = {};
     D3D10_PRIMITIVE_TOPOLOGY current_pt = D3D10_PRIMITIVE_TOPOLOGY_UNDEFINED;
@@ -138,8 +142,20 @@ public:
     } current_vbs = {};
     ID3D10Buffer *current_pscbs[MAX_CONSTANT_BUFFERS] = {};
     ID3D10Buffer *current_vscbs[MAX_CONSTANT_BUFFERS] = {};
+    UINT render_width = 0;
+    UINT render_height = 0;
+    UINT render_orig_width = 0;
+    UINT render_orig_height = 0;
     D3D10_VIEWPORT current_vp = {};
+    D3D10_VIEWPORT orig_vp = {};
+    bool need_current_vp = false;
+    bool is_current_vp = false;
+    void set_render_vp();
+    void reset_render_vp();
+    UINT render_3d_width = 0;
+    UINT render_3d_height = 0;
 
+public:
     MyID3D10Device(
         ID3D10Device **inner,
         UINT width,
@@ -151,7 +167,9 @@ public:
     IUNKNOWN_DECL(MyID3D10Device, ID3D10Device)
 
     void present();
+    void resize_render_3d(UINT width, UINT height);
     void resize_buffers(UINT width, UINT height);
+    void resize_orig_buffers(UINT width, UINT height);
 
     // ID3D10Device
 

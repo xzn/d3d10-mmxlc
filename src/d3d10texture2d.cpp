@@ -1,4 +1,5 @@
 #include "d3d10texture2d.h"
+#include "dxgiswapchain.h"
 #include "log.h"
 
 #define LOGGER default_logger
@@ -8,9 +9,13 @@ IUNKNOWN_IMPL(MyID3D10Texture2D)
 
 MyID3D10Texture2D::MyID3D10Texture2D(
     ID3D10Texture2D **inner,
-    const D3D10_TEXTURE2D_DESC *pDesc
+    const D3D10_TEXTURE2D_DESC *pDesc,
+    MyIDXGISwapChain *sc
 ) :
     desc(*pDesc),
+    orig_width(pDesc->Width),
+    orig_height(pDesc->Height),
+    sc(sc),
     IUNKNOWN_INIT(*inner)
 {
     LOG_MFUN(_,
@@ -21,6 +26,7 @@ MyID3D10Texture2D::MyID3D10Texture2D(
 
 MyID3D10Texture2D::~MyID3D10Texture2D() {
     LOG_MFUN();
+    if (sc) sc->bbs.erase(this);
 }
 
 HRESULT STDMETHODCALLTYPE MyID3D10Texture2D::Map(

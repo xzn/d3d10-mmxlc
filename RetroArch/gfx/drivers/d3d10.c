@@ -183,6 +183,7 @@ bool my_d3d10_gfx_frame(d3d10_video_t *d3d10, d3d10_texture_t *texture, UINT64 f
 
     D3D10SetPrimitiveTopology(context, D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 
+if (d3d10->shader_preset) {
     if (d3d10->frame.texture[0].desc.Width != width || d3d10->frame.texture[0].desc.Height != height) {
         d3d10->resize_render_targets = true;
     }
@@ -207,6 +208,7 @@ bool my_d3d10_gfx_frame(d3d10_video_t *d3d10, d3d10_texture_t *texture, UINT64 f
             d3d10->frame.texture[0] = tmp;
         }
     }
+}
 
     if (d3d10->frame.texture[0].desc.Width != width || d3d10->frame.texture[0].desc.Height != height) {
         d3d10->frame.texture[0].desc.Width  = width;
@@ -214,9 +216,11 @@ bool my_d3d10_gfx_frame(d3d10_video_t *d3d10, d3d10_texture_t *texture, UINT64 f
         d3d10_init_texture(d3d10->device, &d3d10->frame.texture[0]);
     }
 
+if (d3d10->shader_preset) {
     if (d3d10->resize_render_targets) {
         d3d10_init_render_targets(d3d10, width, height);
     }
+}
 
     D3D10SetVertexBuffer(context, 0, d3d10->frame.vbo, sizeof(d3d10_vertex_t), 0);
     D3D10SetBlendState(context, d3d10->blend_disable, NULL, D3D10_DEFAULT_SAMPLE_MASK);
@@ -225,6 +229,7 @@ bool my_d3d10_gfx_frame(d3d10_video_t *d3d10, d3d10_texture_t *texture, UINT64 f
 
     texture = d3d10->frame.texture;
 
+if (d3d10->shader_preset) {
     for (unsigned i = 0; i < d3d10->shader_preset->passes; ++i) {
         if (d3d10->shader_preset->pass[i].feedback) {
             d3d10_texture_t tmp     = d3d10->pass[i].feedback;
@@ -302,6 +307,7 @@ bool my_d3d10_gfx_frame(d3d10_video_t *d3d10, d3d10_texture_t *texture, UINT64 f
             break;
         }
     }
+}
 
     D3D10SetRenderTargets(context, 1, &d3d10->renderTargetView, NULL);
 

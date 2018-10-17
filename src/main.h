@@ -1,8 +1,10 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#define ENABLE_LOGGER 1
+#define ENABLE_LOGGER 0
 #define ENABLE_SLANG_SHADER 1
+// This is currently broken
+#define ENABLE_CUSTOM_RESOLUTION 0
 
 #define UNICODE
 #define _UNICODE
@@ -12,6 +14,8 @@
 #include <d3d10.h>
 #define VK_VALUE_BEGIN 1
 #define VK_VALUE_END (VK_OEM_CLEAR + 1)
+
+#include <stdlib.h>
 
 #include <iostream>
 #include <sstream>

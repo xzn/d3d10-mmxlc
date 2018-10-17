@@ -6,12 +6,38 @@
 
 class Overlay;
 class MyID3D10Device;
+class MyID3D10Texture2D;
 
 class MyIDXGISwapChain : public IDXGISwapChain {
     Overlay *overlay;
     MyID3D10Device *my_device;
     UINT current_width;
     UINT current_height;
+    UINT current_flags;
+    UINT current_buffer_count;
+    DXGI_FORMAT current_format;
+    bool is_config_size = false;
+
+    struct Config {
+        UINT render_3d_width;
+        UINT render_3d_height;
+        UINT display_width;
+        UINT display_height;
+        UINT display_flags;
+        UINT display_buffer_count;
+        DXGI_FORMAT display_format;
+        bool render_3d_updated;
+        bool display_updated;
+    } config = {};
+    void update_config();
+
+    HRESULT my_resize_buffers(
+        UINT width,
+        UINT height,
+        UINT flags,
+        UINT buffer_count,
+        DXGI_FORMAT format
+    );
 
 public:
     MyIDXGISwapChain(
@@ -21,6 +47,8 @@ public:
     );
 
     virtual ~MyIDXGISwapChain();
+
+    std::unordered_set<MyID3D10Texture2D *> bbs;
 
     IUNKNOWN_DECL(MyIDXGISwapChain, IDXGISwapChain)
 

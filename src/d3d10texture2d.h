@@ -5,13 +5,26 @@
 #include "unknown.h"
 #include "d3d10resource.h"
 
+class MyID3D10RenderTargetView;
+class MyID3D10ShaderResourceView;
+class MyID3D10DepthStencilView;
+class MyIDXGISwapChain;
+
 class MyID3D10Texture2D : public ID3D10Texture2D {
 public:
     D3D10_TEXTURE2D_DESC desc;
 
+    std::unordered_set<MyID3D10RenderTargetView *> rtvs;
+    std::unordered_set<MyID3D10ShaderResourceView *> srvs;
+    std::unordered_set<MyID3D10DepthStencilView *> dsvs;
+    const UINT orig_width;
+    const UINT orig_height;
+    MyIDXGISwapChain *sc;
+
     MyID3D10Texture2D(
         ID3D10Texture2D **inner,
-        const D3D10_TEXTURE2D_DESC *pDesc
+        const D3D10_TEXTURE2D_DESC *pDesc,
+        MyIDXGISwapChain *sc = NULL
     );
 
     virtual ~MyID3D10Texture2D();

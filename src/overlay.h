@@ -49,10 +49,6 @@ class Overlay {
     }
 
 public:
-
-    std::vector<BYTE> log_toggle_hotkey;
-    std::vector<BYTE> log_frame_hotkey;
-
     Overlay(
         DXGI_SWAP_CHAIN_DESC *pSwapChainDesc,
         IDXGISwapChain *pSwapChain,

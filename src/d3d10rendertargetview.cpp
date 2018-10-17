@@ -1,4 +1,5 @@
 #include "d3d10rendertargetview.h"
+#include "d3d10texture2d.h"
 #include "log.h"
 
 #define LOGGER default_logger
@@ -17,13 +18,20 @@ MyID3D10RenderTargetView::MyID3D10RenderTargetView(
 {
     LOG_MFUN(_,
         LOG_ARG(*inner)
-    );current_rtvs_map.emplace(*inner, this);
+    );
+    current_rtvs_map.emplace(*inner, this);
     *inner = this;
+    resource->AddRef();
 }
 
 MyID3D10RenderTargetView::~MyID3D10RenderTargetView() {
     LOG_MFUN();
     current_rtvs_map.erase(inner);
+    if (desc.ViewDimension == D3D10_RTV_DIMENSION_TEXTURE2D) {
+        MyID3D10Texture2D *texture_2d = (MyID3D10Texture2D *)resource;
+        texture_2d->rtvs.erase(this);
+    }
+    resource->Release();
 }
 
 void STDMETHODCALLTYPE MyID3D10RenderTargetView::GetDesc(
