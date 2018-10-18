@@ -1134,16 +1134,22 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
                 inner->CreateTexture2D(&desc, NULL, &tex->inner);
 
                 for (MyID3D10RenderTargetView *rtv : tex->rtvs) {
+                    current_rtvs_map.erase(rtv->inner);
                     rtv->inner->Release();
                     inner->CreateRenderTargetView(tex->inner, &rtv->desc, &rtv->inner);
+                    current_rtvs_map.emplace(rtv->inner, rtv);
                 }
                 for (MyID3D10ShaderResourceView *srv : tex->srvs) {
+                    current_srvs_map.erase(srv->inner);
                     srv->inner->Release();
                     inner->CreateShaderResourceView(tex->inner, &srv->desc, &srv->inner);
+                    current_srvs_map.emplace(srv->inner, srv);
                 }
                 for (MyID3D10DepthStencilView *dsv : tex->dsvs) {
+                    current_dsvs_map.erase(dsv->inner);
                     dsv->inner->Release();
                     inner->CreateDepthStencilView(tex->inner, &dsv->desc, &dsv->inner);
+                    current_dsvs_map.emplace(dsv->inner, dsv);
                 }
 
                 tex->desc = desc;

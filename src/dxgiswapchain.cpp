@@ -51,18 +51,21 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         for (MyID3D10Texture2D *bb : bbs) {
             for (MyID3D10RenderTargetView *rtv : bb->rtvs) {
                 if (rtv->inner) {
+                    current_rtvs_map.erase(rtv->inner);
                     rtv->inner->Release();
                     rtv->inner = NULL;
                 }
             }
             for (MyID3D10ShaderResourceView *srv : bb->srvs) {
                 if (srv->inner) {
+                    current_srvs_map.erase(srv->inner);
                     srv->inner->Release();
                     srv->inner = NULL;
                 }
             }
             for (MyID3D10DepthStencilView *dsv : bb->dsvs) {
                 if (dsv->inner) {
+                    current_dsvs_map.erase(dsv->inner);
                     dsv->inner->Release();
                     dsv->inner = NULL;
                 }
@@ -95,12 +98,15 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
             );
             for (MyID3D10RenderTargetView *rtv : bb->rtvs) {
                 my_device->inner->CreateRenderTargetView(bb->inner, &rtv->desc, &rtv->inner);
+                current_rtvs_map.emplace(rtv->inner, rtv);
             }
             for (MyID3D10ShaderResourceView *srv : bb->srvs) {
                 my_device->inner->CreateShaderResourceView(bb->inner, &srv->desc, &srv->inner);
+                current_srvs_map.emplace(srv->inner, srv);
             }
             for (MyID3D10DepthStencilView *dsv : bb->dsvs) {
                 my_device->inner->CreateDepthStencilView(bb->inner, &dsv->desc, &dsv->inner);
+                current_dsvs_map.emplace(dsv->inner, dsv);
             }
             bb->inner->GetDesc(&bb->desc);
         }
