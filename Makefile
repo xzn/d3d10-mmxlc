@@ -216,10 +216,10 @@ dir_all := $(sort $(dir $(obj_all)))
 dep_all := $(obj_all:%.o=%.d)
 dll := dinput8.dll
 
-ifeq ($(color),0)
-	color_opt :=
-else
+ifeq ($(color),1)
 	color_opt := -fdiagnostics-color=always
+else
+	color_opt :=
 endif
 
 ifeq ($(o3),0)

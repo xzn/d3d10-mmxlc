@@ -1169,6 +1169,7 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
 }
 
 void MyID3D10Device::set_render_vp() {
+if constexpr (ENABLE_CUSTOM_RESOLUTION) {
     if (need_current_vp && !is_current_vp) {
         if (current_vp.Width && current_vp.Height) {
             D3D10_VIEWPORT vp = {
@@ -1186,8 +1187,10 @@ void MyID3D10Device::set_render_vp() {
         is_current_vp = true;
     }
 }
+}
 
 void MyID3D10Device::reset_render_vp() {
+if constexpr (ENABLE_CUSTOM_RESOLUTION) {
     if (need_current_vp && is_current_vp) {
         if (current_vp.Width && current_vp.Height) {
             current_vp = orig_vp;
@@ -1196,6 +1199,7 @@ void MyID3D10Device::reset_render_vp() {
         }
         is_current_vp = false;
     }
+}
 }
 
 #define GET_RENDER_TEX_VIEWS(v) do { \
