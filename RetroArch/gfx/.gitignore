@@ -1,0 +1,6 @@
+common/d3d10_common.c
+common/d3d10_common.h
+common/d3dcompiler_common.c
+common/d3dcompiler_common.h
+drivers/d3d10_base.c
+drivers_font/d3d10_font.c

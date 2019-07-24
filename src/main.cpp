@@ -11,7 +11,7 @@ bool _tstring_view_icmp::operator()(const _tstring_view &a, const _tstring_view 
 #include "conf.h"
 #include "ini.h"
 #include "log.h"
-#include "../RetroArch/RetroArch/configuration.h"
+#include "../RetroArch/retroarch.h"
 
 BOOL WINAPI DllMain(
     HINSTANCE hinstDLL, // handle to DLL module
@@ -27,7 +27,7 @@ BOOL WINAPI DllMain(
         {
             DisableThreadLibraryCalls(hinstDLL);
 
-            config_init();
+            my_config_init();
             InitializeCriticalSection(&Overlay::texts_cs);
             Overlay::push_text(MOD_NAME " loaded");
             default_overlays = new std::unordered_set<Overlay *>{};
@@ -59,7 +59,7 @@ BOOL WINAPI DllMain(
             delete default_config;
             delete default_overlays;
             DeleteCriticalSection(&Overlay::texts_cs);
-            config_free();
+            my_config_free();
 
             break;
         }

@@ -1,5 +1,5 @@
+#include "d3d10_base.c"
 #include "d3d10.h"
-#include "d3d10_orig.c"
 
 d3d10_video_t *my_d3d10_gfx_init(ID3D10Device *device, DXGI_FORMAT format) {
     d3d10_video_t *d3d10 = (d3d10_video_t *)calloc(1, sizeof(d3d10_video_t));
@@ -246,6 +246,7 @@ if (d3d10->shader_preset) {
         } else {
             d3d10->pass[i].frame_count = frame_count;
         }
+        d3d10->pass[i].frame_direction = 1;
 
         for (unsigned j = 0; j < SLANG_CBUFFER_MAX; ++j) {
             D3D10Buffer    buffer     = d3d10->pass[i].buffers[j];

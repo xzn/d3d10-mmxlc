@@ -1,3 +1,10 @@
+ifeq ($(OS),Windows_NT)
+	cross_prefix :=
+else
+	cross_prefix := i686-w64-mingw32-
+endif
+cc := $(cross_prefix)gcc
+cxx := $(cross_prefix)g++
 smhasher_src := smhasher/src/MurmurHash3.cpp
 smhasher_obj := $(smhasher_src:smhasher/src/%.cpp=obj/smhasher/%.o)
 smhasher_dir := $(sort $(dir $(smhasher_obj)))
@@ -19,198 +26,19 @@ spirv_dir := $(sort $(dir $(spirv_obj)))
 glslang_src := $(wildcard glslang/glslang/glslang/GenericCodeGen/*.cpp) $(wildcard glslang/glslang/glslang/MachineIndependent/*.cpp) $(wildcard glslang/glslang/glslang/MachineIndependent/preprocessor/*.cpp) glslang/glslang/glslang/OSDependent/Windows/ossource.cpp $(wildcard glslang/glslang/hlsl/*.cpp) $(wildcard glslang/glslang/OGLCompilersDLL/*.cpp) $(wildcard glslang/glslang/SPIRV/*.cpp)
 glslang_obj := $(glslang_src:glslang/glslang/%.cpp=obj/glslang/%.o)
 glslang_dir := $(sort $(dir $(glslang_obj)))
-retroarch_obj := \
-frontend/frontend.o \
-frontend/frontend_driver.o \
-frontend/drivers/platform_null.o \
-ui/ui_companion_driver.o \
-ui/drivers/ui_null.o \
-ui/drivers/null/ui_null_window.o \
-ui/drivers/null/ui_null_browser_window.o \
-ui/drivers/null/ui_null_msg_window.o \
-ui/drivers/null/ui_null_application.o \
-core_impl.o \
-retroarch.o \
-dirs.o \
-paths.o \
-command.o \
-msg_hash.o \
-intl/msg_hash_us.o \
-libretro-common/queues/task_queue.o \
-tasks/task_content.o \
-tasks/task_save.o \
-tasks/task_file_transfer.o \
-tasks/task_image.o \
-tasks/task_audio_mixer.o \
-libretro-common/encodings/encoding_utf.o \
-libretro-common/encodings/encoding_crc32.o \
-libretro-common/compat/fopen_utf8.o \
-libretro-common/lists/file_list.o \
-libretro-common/lists/dir_list.o \
-libretro-common/file/retro_dirent.o \
-libretro-common/streams/stdin_stream.o \
-libretro-common/streams/file_stream.o \
-libretro-common/streams/file_stream_transforms.o \
-libretro-common/streams/interface_stream.o \
-libretro-common/streams/memory_stream.o \
-libretro-common/vfs/vfs_implementation.o \
-libretro-common/lists/string_list.o \
-libretro-common/string/stdstring.o \
-libretro-common/memmap/memalign.o \
-setting_list.o \
-list_special.o \
-libretro-common/file/nbio/nbio_stdio.o \
-libretro-common/file/nbio/nbio_linux.o \
-libretro-common/file/nbio/nbio_unixmmap.o \
-libretro-common/file/nbio/nbio_windowsmmap.o \
-libretro-common/file/nbio/nbio_intf.o \
-libretro-common/file/file_path.o \
-file_path_special.o \
-file_path_str.o \
-libretro-common/hash/rhash.o \
-audio/audio_driver.o \
-libretro-common/audio/audio_mixer.o \
-input/common/input_common.o \
-input/input_driver.o \
-input/input_mapper.o \
-led/led_driver.o \
-led/drivers/led_null.o \
-gfx/video_coord_array.o \
-gfx/video_display_server.o \
-gfx/video_driver.o \
-gfx/video_crt_switch.o \
-camera/camera_driver.o \
-wifi/wifi_driver.o \
-location/location_driver.o \
-driver.o \
-configuration.o \
-libretro-common/dynamic/dylib.o \
-dynamic.o \
-cores/dynamic_dummy.o \
-libretro-common/queues/message_queue.o \
-managers/core_manager.o \
-managers/state_manager.o \
-gfx/drivers_font_renderer/bitmapfont.o \
-tasks/task_autodetect.o \
-input/input_autodetect_builtin.o \
-input/input_keymaps.o \
-input/input_remapping.o \
-libretro-common/queues/fifo_queue.o \
-managers/core_option_manager.o \
-libretro-common/compat/compat_fnmatch.o \
-libretro-common/compat/compat_posix_string.o \
-managers/cheat_manager.o \
-core_info.o \
-libretro-common/file/config_file.o \
-libretro-common/file/config_file_userdata.o \
-tasks/task_screenshot.o \
-tasks/task_powerstate.o \
-libretro-common/gfx/scaler/scaler.o \
-gfx/drivers_shader/shader_null.o \
-gfx/video_shader_parse.o \
-libretro-common/gfx/scaler/pixconv.o \
-libretro-common/gfx/scaler/scaler_int.o \
-libretro-common/gfx/scaler/scaler_filter.o \
-gfx/font_driver.o \
-gfx/video_filter.o \
-libretro-common/audio/resampler/audio_resampler.o \
-libretro-common/audio/dsp_filter.o \
-libretro-common/audio/resampler/drivers/sinc_resampler.o \
-libretro-common/audio/resampler/drivers/nearest_resampler.o \
-libretro-common/audio/resampler/drivers/null_resampler.o \
-libretro-common/utils/md5.o \
-location/drivers/nulllocation.o \
-camera/drivers/nullcamera.o \
-wifi/drivers/nullwifi.o \
-gfx/drivers/nullgfx.o \
-gfx/display_servers/dispserv_null.o \
-audio/drivers/nullaudio.o \
-input/drivers/nullinput.o \
-input/drivers_hid/null_hid.o \
-input/drivers_joypad/null_joypad.o \
-playlist.o \
-movie.o \
-record/record_driver.o \
-record/drivers/record_null.o \
-libretro-common/features/features_cpu.o \
-performance_counters.o \
-verbosity.o \
-midi/midi_driver.o \
-midi/drivers/null_midi.o \
-libretro-common/compat/compat_getopt.o \
-libretro-common/compat/compat_strcasestr.o \
-libretro-common/compat/compat_strl.o \
-libretro-common/formats/image_texture.o \
-libretro-common/formats/xml/rxml.o \
-libretro-common/formats/tga/rtga.o \
-libretro-common/formats/png/rpng.o \
-libretro-common/formats/png/rpng_encode.o \
-libretro-common/formats/jpeg/rjpeg.o \
-libretro-common/formats/bmp/rbmp.o \
-libretro-common/file/archive_file.o \
-libretro-common/streams/trans_stream.o \
-libretro-common/streams/trans_stream_pipe.o \
-libretro-common/file/archive_file_zlib.o \
-libretro-common/streams/trans_stream_zlib.o \
-deps/libz/adler32.o \
-deps/libz/compress.o \
-deps/libz/libz-crc32.o \
-deps/libz/deflate.o \
-deps/libz/gzclose.o \
-deps/libz/gzlib.o \
-deps/libz/gzread.o \
-deps/libz/gzwrite.o \
-deps/libz/inffast.o \
-deps/libz/inflate.o \
-deps/libz/inftrees.o \
-deps/libz/trees.o \
-deps/libz/uncompr.o \
-deps/libz/zutil.o \
-tasks/task_decompress.o \
-gfx/common/win32_common.o \
-frontend/drivers/platform_win32.o \
-gfx/drivers/gdi_gfx.o \
-gfx/drivers_context/gdi_ctx.o \
-gfx/drivers_font/gdi_font.o \
-gfx/display_servers/dispserv_win32.o \
-menu/drivers_display/menu_display_gdi.o \
-input/drivers/winraw_input.o \
-ui/drivers/ui_win32.o \
-ui/drivers/win32/ui_win32_window.o \
-ui/drivers/win32/ui_win32_browser_window.o \
-ui/drivers/win32/ui_win32_msg_window.o \
-ui/drivers/win32/ui_win32_application.o \
-gfx/drivers_context/gfx_null_ctx.o \
-gfx/video_state_tracker.o \
-libretro-common/formats/bmp/rbmp_encode.o \
-libretro-common/formats/json/jsonsax.o \
-libretro-common/formats/json/jsonsax_full.o \
-libretro-common/formats/image_transfer.o \
-libretro-common/audio/conversion/s16_to_float.o \
-libretro-common/audio/conversion/float_to_s16.o \
-libretro-common/audio/audio_mix.o \
-libretro-common/formats/wav/rwav.o \
-gfx/drivers/d3d10.o \
-gfx/common/d3d10_common.o \
-gfx/drivers_font/d3d10_font.o \
-gfx/common/d3dcompiler_common.o \
-gfx/common/dxgi_common.o \
-input/drivers/dinput.o \
-input/drivers_joypad/dinput_joypad.o \
-gfx/drivers_shader/slang_process.o \
-gfx/drivers_shader/slang_preprocess.o \
-gfx/drivers_shader/glslang_util.o \
-gfx/drivers_shader/slang_reflection.o \
-deps/glslang/glslang.o
+retroarch_fun = $(shell make -f RetroArch/RetroArch/Makefile.common $$'--eval=_print-var:\n\t@echo $$($1)' _print-var $(retroarch_def))
+retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_D3D10=1 HAVE_SLANG=1 HAVE_BUILTINZLIB=1 HAVE_RTGA=1 HAVE_RPNG=1 HAVE_RJPEG=1 HAVE_RBMP=1
+# retroarch_def += HAVE_DINPUT=1 HAVE_GDI=1 HAVE_MENU=1
+retroarch_obj := $(call retroarch_fun,OBJ) deps/glslang/glslang.o
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
 retroarch_dir := $(sort $(dir $(retroarch_obj)))
-retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN -DHAVE_D3D10 -DHAVE_DINPUT -DHAVE_SLANG -DHAVE_GLSLANG -DHAVE_SPIRV_CROSS -DENABLE_HLSL -DHAVE_RTGA -DHAVE_RPNG -DHAVE_RJPEG -DHAVE_RBMP -DHAVE_ZLIB -DWANT_ZLIB -DHAVE_COMPRESSION -IRetroArch/RetroArch/libretro-common/include -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
-retroarch_cc = gcc $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) $(retroarch_flg) -Wno-implicit-function-declaration
-retroarch_cxx = g++ $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
+retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN $(call retroarch_fun,DEFINES) -DENABLE_HLSL -DHAVE_GLSLANG -DHAVE_SPIRV_CROSS -IRetroArch/RetroArch/libretro-common/include -IRetroArch/RetroArch/libretro-common/include/compat/zlib -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
+retroarch_cc = $(cc) $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) $(retroarch_flg) -Werror=implicit-function-declaration
+retroarch_cxx = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
 src := $(wildcard src/*.cpp)
 obj := $(src:src/%.cpp=obj/%.o)
 dir := $(sort $(dir $(obj)))
-cxx = g++ $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt)
+cxx_all = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt)
 obj_all := $(obj) $(smhasher_obj) $(HLSLcc_obj) $(cbstring_obj) $(imgui_obj) $(minhook_obj) $(spirv_obj) $(glslang_obj) $(retroarch_obj)
 dir_all := $(sort $(dir $(obj_all)))
 dep_all := $(obj_all:%.o=%.d)
@@ -235,32 +63,58 @@ else
 	lto_opt := -flto
 endif
 
+glslang_ln := glslang/glslang.cpp glslang/glslang.hpp
+retroarch_ln := RetroArch/gfx/common/d3d10_common.c RetroArch/gfx/common/d3dcompiler_common.c RetroArch/gfx/drivers_font/d3d10_font.c
+retroarch_base_ln := RetroArch/gfx/drivers/d3d10_base.c
+retroarch_hdr := RetroArch/gfx/common/d3d10_common.h RetroArch/gfx/common/d3dcompiler_common.h
+retroarch_hdr_src := $(retroarch_hdr:RetroArch/%.h=RetroArch/RetroArch/%.h)
+retroarch_hdr_sen := obj/RetroArch/.retroarch_hdr_sen
+
+prep_src := $(glslang_ln) $(retroarch_ln) $(retroarch_hdr) $(retroarch_hdr_sen) $(retroarch_base_ln)
+prep: $(prep_src)
+dll: $(dll)
+
 $(dll): $(obj_all) dinput8.def
-	g++ $(color_opt) -o $@ $+ $(o3_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
+	$(cxx) $(color_opt) -o $@ $+ $(o3_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
+
+$(glslang_ln): glslang/%: RetroArch/RetroArch/deps/glslang/%
+	ln -sr $< $@
+
+$(retroarch_ln): RetroArch/%: RetroArch/RetroArch/%
+	ln -sr $< $@
+
+$(retroarch_base_ln): RetroArch/%_base.c: RetroArch/RetroArch/%.c
+	ln -sr $< $@
+
+$(retroarch_hdr): $(retroarch_hdr_sen)
+$(retroarch_hdr_sen): RetroArch/gfx/common/common.diff | $(retroarch_hdr_src) $(retroarch_dir)
+	cp $(retroarch_hdr_src) $(<D)
+	patch -d $(<D) -p 0 -i $(<F)
+	touch $@
 
 obj/%.o: src/%.cpp | $(dir)
-	$(cxx) -Werror -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
+	$(cxx_all) -Werror -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
 
 obj/smhasher/%.o: smhasher/src/%.cpp | $(smhasher_dir)
-	$(cxx)
+	$(cxx_all)
 
 obj/HLSLcc/%.o: HLSLcc/src/%.cpp | $(HLSLcc_dir)
-	$(cxx) -IHLSLcc -IHLSLcc/include -IHLSLcc/src/internal_includes -IHLSLcc/src/cbstring -IHLSLcc/src -Wno-deprecated-declarations
+	$(cxx_all) -IHLSLcc -IHLSLcc/include -IHLSLcc/src/internal_includes -IHLSLcc/src/cbstring -IHLSLcc/src -Wno-deprecated-declarations
 
 obj/cbstring/%.o: HLSLcc/src/cbstring/%.c | $(cbstring_dir)
-	gcc $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) -IHLSLcc/src/cbstring
+	$(cc) $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) -IHLSLcc/src/cbstring
 
 obj/imgui/%.o: imgui/%.cpp | $(imgui_dir)
-	$(cxx) -Iimgui
+	$(cxx_all) -Iimgui
 
 obj/minhook/%.o: minhook/src/%.c | $(minhook_dir)
-	gcc $(color_opt) -c -MMD -MP -o $@ $< -std=c11 -masm=intel $(o3_opt)
+	$(cc) $(color_opt) -c -MMD -MP -o $@ $< -std=c11 -masm=intel $(o3_opt)
 
 obj/SPIRV-Cross/%.o: SPIRV-Cross/%.cpp | $(spirv_dir)
-	$(cxx)
+	$(cxx_all)
 
 obj/glslang/%.o: glslang/glslang/%.cpp | $(glslang_dir)
-	$(cxx) -DENABLE_HLSL
+	$(cxx_all) -DENABLE_HLSL
 
 obj/RetroArch/gfx/common/d3d10_common.o : RetroArch/gfx/common/d3d10_common.c | $(retroarch_dir)
 	$(retroarch_cc) -IRetroArch/RetroArch/gfx/common
@@ -277,15 +131,18 @@ obj/RetroArch/%.o: RetroArch/RetroArch/%.cpp | $(retroarch_dir)
 obj/RetroArch/deps/glslang/glslang.o: glslang/glslang.cpp | $(retroarch_dir)
 	$(retroarch_cxx) -IRetroArch/RetroArch/deps/glslang
 
+obj/RetroArch/%.o: RetroArch/RetroArch/%.rc | $(retroarch_dir)
+	$(cross_prefix)windres -o $@ $<
+
 $(dir_all):
 	@mkdir -p $@
 
-.PHONY: clean
+.PHONY: prep dll clean retroarch_hdr
 
 clean:
 	-find obj/ -type f -name '*.o' -delete
 	-find obj/ -type f -name '*.d' -delete
 	-find obj/ -type d -empty -delete
-	-$(RM) *.dll
+	-$(RM) *.dll $(prep_src)
 
 -include $(dep_all)

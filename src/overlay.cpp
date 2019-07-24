@@ -137,7 +137,7 @@ HRESULT Overlay::present(
         ImGui::NewFrame();
         ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::SetNextWindowSize(ImVec2(0, 0));
-        ImGui::Begin("", NULL, ImGuiWindowFlags_NoTitleBar);
+        ImGui::Begin("Overlay", NULL, ImGuiWindowFlags_NoTitleBar);
         while (
             texts.size() &&
             texts.front().time &&

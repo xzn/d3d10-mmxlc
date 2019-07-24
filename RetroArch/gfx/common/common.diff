@@ -1,0 +1,129 @@
+diff -x '*.c' -x '*.diff' -u ../../RetroArch/gfx/common/d3d10_common.h ./d3d10_common.h
+--- ../../RetroArch/gfx/common/d3d10_common.h	2019-07-23 10:22:59.145881800 -0300
++++ ./d3d10_common.h	2019-07-23 11:38:29.917714900 -0300
+@@ -16,6 +16,7 @@
+ #pragma once
+ 
+ #include <retro_inline.h>
++#include <formats/image.h>
+ 
+ #include "dxgi_common.h"
+ #include <d3d10.h>
+@@ -34,7 +35,6 @@
+ typedef ID3D10GeometryShader*    D3D10GeometryShader;
+ 
+ /* auto-generated */
+-typedef ID3DDestructionNotifier*  D3DDestructionNotifier;
+ typedef ID3D10Resource*           D3D10Resource;
+ typedef ID3D10Buffer*             D3D10Buffer;
+ typedef ID3D10Texture1D*          D3D10Texture1D;
+@@ -50,10 +50,9 @@
+ typedef ID3D10Counter*            D3D10Counter;
+ typedef ID3D10Device*             D3D10Device;
+ typedef ID3D10Multithread*        D3D10Multithread;
+-typedef ID3D10Debug*              D3D10Debug;
+-typedef ID3D10SwitchToRef*        D3D10SwitchToRef;
+ typedef ID3D10InfoQueue*          D3D10InfoQueue;
+ 
++
+ #if !defined(__cplusplus) || defined(CINTERFACE)
+ static INLINE void D3D10SetResourceEvictionPriority(D3D10Resource resource, UINT eviction_priority)
+ {
+@@ -819,39 +818,6 @@
+ {
+    return multithread->lpVtbl->GetMultithreadProtected(multithread);
+ }
+-static INLINE HRESULT D3D10SetDebugFeatureMask(D3D10Debug debug, UINT mask)
+-{
+-   return debug->lpVtbl->SetFeatureMask(debug, mask);
+-}
+-static INLINE UINT D3D10GetDebugFeatureMask(D3D10Debug debug)
+-{
+-   return debug->lpVtbl->GetFeatureMask(debug);
+-}
+-static INLINE HRESULT D3D10SetPresentPerRenderOpDelay(D3D10Debug debug, UINT milliseconds)
+-{
+-   return debug->lpVtbl->SetPresentPerRenderOpDelay(debug, milliseconds);
+-}
+-static INLINE UINT D3D10GetPresentPerRenderOpDelay(D3D10Debug debug)
+-{
+-   return debug->lpVtbl->GetPresentPerRenderOpDelay(debug);
+-}
+-static INLINE HRESULT D3D10SetSwapChain(D3D10Debug debug, IDXGISwapChain* swap_chain)
+-{
+-   return debug->lpVtbl->SetSwapChain(debug, (IDXGISwapChain*)swap_chain);
+-}
+-static INLINE HRESULT D3D10GetSwapChain(D3D10Debug debug, IDXGISwapChain** swap_chain)
+-{
+-   return debug->lpVtbl->GetSwapChain(debug, (IDXGISwapChain**)swap_chain);
+-}
+-static INLINE HRESULT D3D10Validate(D3D10Debug debug) { return debug->lpVtbl->Validate(debug); }
+-static INLINE BOOL    D3D10SetUseRef(D3D10SwitchToRef switch_to_ref, BOOL use_ref)
+-{
+-   return switch_to_ref->lpVtbl->SetUseRef(switch_to_ref, use_ref);
+-}
+-static INLINE BOOL D3D10GetUseRef(D3D10SwitchToRef switch_to_ref)
+-{
+-   return switch_to_ref->lpVtbl->GetUseRef(switch_to_ref);
+-}
+ static INLINE HRESULT
+ D3D10SetMessageCountLimit(D3D10InfoQueue info_queue, UINT64 message_count_limit)
+ {
+@@ -1215,6 +1181,7 @@
+    d3d10_texture_t      luts[GFX_MAX_TEXTURES];
+ } d3d10_video_t;
+ 
++#if !defined(__cplusplus) || defined(CINTERFACE)
+ void d3d10_init_texture(D3D10Device device, d3d10_texture_t* texture);
+ static INLINE void d3d10_release_texture(d3d10_texture_t* texture)
+ {
+@@ -1272,7 +1239,6 @@
+    D3D10SetGShader(ctx, shader->gs);
+ }
+ 
+-#if !defined(__cplusplus) || defined(CINTERFACE)
+ static INLINE void
+ d3d10_set_texture_and_sampler(D3D10Device ctx, UINT slot, d3d10_texture_t* texture)
+ {
+diff -x '*.c' -x '*.diff' -u ../../RetroArch/gfx/common/d3dcompiler_common.h ./d3dcompiler_common.h
+--- ../../RetroArch/gfx/common/d3dcompiler_common.h	2018-09-27 09:19:52.000000000 -0300
++++ ./d3dcompiler_common.h	2018-09-11 13:41:26.000000000 -0300
+@@ -25,7 +25,6 @@
+ /* auto-generated */
+ 
+ typedef ID3DBlob*                D3DBlob;
+-typedef ID3DDestructionNotifier* D3DDestructionNotifier;
+ 
+ #if !defined(__cplusplus) || defined(CINTERFACE)
+ static INLINE ULONG  D3DReleaseBlob(D3DBlob blob)
+@@ -41,30 +40,6 @@
+ {
+    return blob->lpVtbl->GetBufferSize(blob);
+ }
+-
+-static INLINE ULONG  D3DReleaseDestructionNotifier(
+-      D3DDestructionNotifier destruction_notifier)
+-{
+-   return destruction_notifier->lpVtbl->Release(destruction_notifier);
+-}
+-
+-static INLINE HRESULT D3DRegisterDestructionCallback(
+-      D3DDestructionNotifier   destruction_notifier,
+-      PFN_DESTRUCTION_CALLBACK callback_fn,
+-      void*                    data,
+-      UINT*                    callback_id)
+-{
+-   return destruction_notifier->lpVtbl->RegisterDestructionCallback(
+-         destruction_notifier, callback_fn, data, callback_id);
+-}
+-
+-static INLINE HRESULT
+-D3DUnregisterDestructionCallback(
+-      D3DDestructionNotifier destruction_notifier, UINT callback_id)
+-{
+-   return destruction_notifier->lpVtbl->UnregisterDestructionCallback(
+-         destruction_notifier, callback_id);
+-}
+ #endif
+ /* end of auto-generated */
+ 

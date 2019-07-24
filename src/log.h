@@ -408,14 +408,14 @@ extern Logger *default_logger;
 #else
 
 #define LOG_STARTED false
-#define LOG_FUN(_, ...) do {} while (0)
+#define LOG_FUN(_, ...) (void)0
 #define LOG_FUN_BEGIN(_, ...) false
-#define LOG_FUN_ARGS(...) do {} while (0)
-#define LOG_FUN_ARGS_NEXT(...) do {} while (0)
-#define LOG_FUN_END(...) do {} while (0)
-#define LOG_MFUN_DEF(n, ...) do {} while (0)
+#define LOG_FUN_ARGS(...) (void)0
+#define LOG_FUN_ARGS_NEXT(...) (void)0
+#define LOG_FUN_END(...) (void)0
+#define LOG_MFUN_DEF(n, ...) (void)0
 #define LOG_MFUN_BEGIN_DEF(n, ...) false
-#define LOG_ITEMS(...) do {} while (0)
+#define LOG_ITEMS(...) (void)0
 
 #endif
 

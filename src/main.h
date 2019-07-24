@@ -1,7 +1,7 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#define ENABLE_LOGGER 0
+#define ENABLE_LOGGER 1
 #define ENABLE_SLANG_SHADER 1
 // This is currently broken
 #define ENABLE_CUSTOM_RESOLUTION 0
