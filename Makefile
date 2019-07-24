@@ -5,8 +5,8 @@ else
 endif
 cc := $(cross_prefix)gcc
 cxx := $(cross_prefix)g++
-smhasher_src := smhasher/src/MurmurHash3.cpp
-smhasher_obj := $(smhasher_src:smhasher/src/%.cpp=obj/smhasher/%.o)
+smhasher_src := smhasher/MurmurHash3.cpp
+smhasher_obj := $(smhasher_src:smhasher/%.cpp=obj/smhasher/%.o)
 smhasher_dir := $(sort $(dir $(smhasher_obj)))
 HLSLcc_src := $(wildcard HLSLcc/src/*.cpp)
 HLSLcc_obj := $(HLSLcc_src:HLSLcc/src/%.cpp=obj/HLSLcc/%.o)
@@ -95,7 +95,7 @@ $(retroarch_hdr_sen): RetroArch/gfx/common/common.diff | $(retroarch_hdr_src) $(
 obj/%.o: src/%.cpp | $(dir)
 	$(cxx_all) -Werror -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
 
-obj/smhasher/%.o: smhasher/src/%.cpp | $(smhasher_dir)
+obj/smhasher/%.o: smhasher/%.cpp | $(smhasher_dir)
 	$(cxx_all)
 
 obj/HLSLcc/%.o: HLSLcc/src/%.cpp | $(HLSLcc_dir)

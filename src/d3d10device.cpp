@@ -12,7 +12,7 @@
 #include "log.h"
 #include "overlay.h"
 #include "tex.h"
-#include "../smhasher/src/MurmurHash3.h"
+#include "../smhasher/MurmurHash3.h"
 
 #define LOGGER default_logger
 #define LOG_MFUN(_, ...) LOG_MFUN_DEF(MyID3D10Device, ## __VA_ARGS__)
@@ -584,24 +584,26 @@ if constexpr (ENABLE_SLANG_SHADER) {
     filter_next = filter_next && srv_tex == filter_state.rtv_tex;
     bool x4 = false;
     D3D10_TEXTURE2D_DESC &srv_tex_desc = srv_tex->desc;
-    if (!filter_next) {
-        if (
-            srv_tex_desc.Width == X1_WIDTH &&
-            srv_tex_desc.Height == X1_HEIGHT
-        ) { // SNES
-        } else if (
-            srv_tex_desc.Width == X4_WIDTH &&
-            srv_tex_desc.Height == X4_HEIGHT
-        ) { // PlayStation
-            x4 = true;
-        } else if (
-            x8 &&
-            srv_tex->orig_width == orig_size.render_3d_width &&
-            srv_tex->orig_height == orig_size.render_3d_height
-        ) { // PlayStation 2
-        } else {
-             goto end;
-        }
+    if (filter_next) {
+        x8 = false;
+    } else if (
+        srv_tex_desc.Width == X1_WIDTH &&
+        srv_tex_desc.Height == X1_HEIGHT
+    ) { // SNES
+        x8 = false;
+    } else if (
+        srv_tex_desc.Width == X4_WIDTH &&
+        srv_tex_desc.Height == X4_HEIGHT
+    ) { // PlayStation
+        x8 = false;
+        x4 = true;
+    } else if (
+        x8 &&
+        srv_tex->orig_width == orig_size.render_3d_width &&
+        srv_tex->orig_height == orig_size.render_3d_height
+    ) { // PlayStation 2
+    } else {
+        goto end;
     }
 
     MyID3D10RenderTargetView *rtv = current_rtv;
