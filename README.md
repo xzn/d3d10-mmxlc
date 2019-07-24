@@ -5,6 +5,8 @@ Features:
 - Let you use [slang-shaders](https://github.com/libretro/slang-shaders) with Capcom's Mega Man X Legacy Collection.
 - Fixes scaling artifact due to nearest-neighbour upscaling.
 
+Download from [here](https://github.com/xzn/d3d10-mmxlc/releases).
+
 ## Building from source
 
 Using i686-w64-mingw32-gcc (cross compiling should work too):
@@ -36,8 +38,8 @@ make lto=0 dll
 
 Copy `dinput8.dll`, `interp-mod.ini`, and the `slang-shaders\` directory to your game folders, e.g.:
 
-`SteamLibrary\steamapps\common\Mega Man X Legacy Collection`
-`SteamLibrary\steamapps\common\Mega Man X Legacy Collection 2`
+- `SteamLibrary\steamapps\common\Mega Man X Legacy Collection`
+- `SteamLibrary\steamapps\common\Mega Man X Legacy Collection 2`
 
 ## Configuration
 
