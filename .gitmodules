@@ -16,9 +16,9 @@
 [submodule "slang-shaders"]
 	path = slang-shaders
 	url = https://github.com/libretro/slang-shaders.git
-[submodule "smhasher"]
-	path = smhasher
-	url = https://github.com/aappleby/smhasher.git
 [submodule "SPIRV-Cross"]
 	path = SPIRV-Cross
 	url = https://github.com/KhronosGroup/SPIRV-Cross.git
+[submodule "smhasher"]
+	path = smhasher
+	url = https://github.com/rurban/smhasher.git
