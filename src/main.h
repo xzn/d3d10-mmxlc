@@ -4,7 +4,7 @@
 #define ENABLE_LOGGER 1
 #define ENABLE_SLANG_SHADER 1
 // This is currently broken
-#define ENABLE_CUSTOM_RESOLUTION 0
+#define ENABLE_CUSTOM_RESOLUTION 1
 
 #define UNICODE
 #define _UNICODE

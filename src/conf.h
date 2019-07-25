@@ -8,6 +8,7 @@ struct Config {
     std::vector<BYTE> log_toggle_hotkey;
     std::vector<BYTE> log_frame_hotkey;
     bool interp = false;
+    bool linear = false;
     bool enhanced = false;
     std::string slang_shader;
     bool slang_shader_updated = false;

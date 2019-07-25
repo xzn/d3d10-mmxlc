@@ -19,14 +19,14 @@ MyID3D10ShaderResourceView::MyID3D10ShaderResourceView(
     LOG_MFUN(_,
         LOG_ARG(*inner)
     );
-    current_srvs_map.emplace(*inner, this);
+    cached_srvs_map.emplace(*inner, this);
     *inner = this;
     resource->AddRef();
 }
 
 MyID3D10ShaderResourceView::~MyID3D10ShaderResourceView() {
     LOG_MFUN();
-    current_srvs_map.erase(inner);
+    cached_srvs_map.erase(inner);
     if (desc.ViewDimension == D3D10_SRV_DIMENSION_TEXTURE2D) {
         MyID3D10Texture2D *texture_2d = (MyID3D10Texture2D *)resource;
         texture_2d->srvs.erase(this);
@@ -43,4 +43,4 @@ void STDMETHODCALLTYPE MyID3D10ShaderResourceView::GetDesc(
 
 ID3D10VIEW_IMPL(MyID3D10ShaderResourceView)
 
-std::unordered_map<ID3D10ShaderResourceView *, MyID3D10ShaderResourceView *> current_srvs_map;
+std::unordered_map<ID3D10ShaderResourceView *, MyID3D10ShaderResourceView *> cached_srvs_map;

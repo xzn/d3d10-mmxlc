@@ -27,6 +27,6 @@ public:
     ID3D10VIEW_DECL
 };
 
-extern std::unordered_map<ID3D10RenderTargetView *, MyID3D10RenderTargetView *> current_rtvs_map;
+extern std::unordered_map<ID3D10RenderTargetView *, MyID3D10RenderTargetView *> cached_rtvs_map;
 
 #endif

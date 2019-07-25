@@ -27,6 +27,6 @@ public:
     ID3D10VIEW_DECL
 };
 
-extern std::unordered_map<ID3D10DepthStencilView *, MyID3D10DepthStencilView *> current_dsvs_map;
+extern std::unordered_map<ID3D10DepthStencilView *, MyID3D10DepthStencilView *> cached_dsvs_map;
 
 #endif

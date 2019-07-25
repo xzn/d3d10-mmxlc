@@ -248,48 +248,57 @@ if constexpr (ENABLE_LOGGER) {
         }
     }
 
-    GET_INI_VALUE(hotkey_toggle);
-    config->log_toggle_hotkey = ini_parse_vk_comb(returned_string);
-    if (*returned_string && !config->log_toggle_hotkey.size()) {
-        Overlay::push_text("Invalid hotkey for log toggle");
-    }
+#define GET_SET_CONFIG_VK_VALUE(v) do { \
+    GET_INI_VALUE(hotkey_ ## v); \
+    config->log_ ## v ## _hotkey = ini_parse_vk_comb(returned_string); \
+    if (*returned_string && !config->log_ ## v ## _hotkey.size()) { \
+        Overlay::push_text("Invalid hotkey for log " #v); \
+    } \
+} while (0)
 
-    GET_INI_VALUE(hotkey_frame);
-    config->log_frame_hotkey = ini_parse_vk_comb(returned_string);
-    if (*returned_string && !config->log_frame_hotkey.size()) {
-        Overlay::push_text("Invalid hotkey for log frame");
-    }
+    GET_SET_CONFIG_VK_VALUE(toggle);
+    GET_SET_CONFIG_VK_VALUE(frame);
 }
 
 #undef SECTION
 
 #define SECTION graphics
 
-    GET_INI_VALUE(interp);
-    bool interp = _tcsicmp(returned_string, _T("TRUE")) == 0;
-    if (!interp && *returned_string && _tcsicmp(returned_string, _T("FALSE")) != 0) {
-        Overlay::push_text("Invalid [graphics].interp value, interp fix disabled");
-    } else if (config->interp != interp) {
-        if (interp) {
-            Overlay::push_text("Interp fix enabled");
-        } else {
-            Overlay::push_text("Interp fix disabled");
-        }
-    }
-    config->interp = interp;
+#define GET_SET_CONFIG_BOOL_VALUE(v, i, e, d) do { \
+    GET_INI_VALUE(v); \
+    bool v = _tcsicmp(returned_string, _T("TRUE")) == 0; \
+    if (!v && *returned_string && _tcsicmp(returned_string, _T("FALSE")) != 0) { \
+        Overlay::push_text(i); \
+    } else if (config->v != v) { \
+        if (v) { \
+            Overlay::push_text(e); \
+        } else { \
+            Overlay::push_text(d); \
+        } \
+    } \
+    config->v = v; \
+} while (0)
 
-    GET_INI_VALUE(enhanced);
-    bool enhanced = _tcsicmp(returned_string, _T("TRUE")) == 0;
-    if (!enhanced && *returned_string && _tcsicmp(returned_string, _T("FALSE")) != 0) {
-        Overlay::push_text("Invalid [graphics].enhanced value, enhanced interp disabled");
-    } else if (config->enhanced != enhanced) {
-        if (enhanced) {
-            Overlay::push_text("Enhanced interp enabled");
-        } else {
-            Overlay::push_text("Enhanced interp disabled");
-        }
-    }
-    config->enhanced = enhanced;
+    GET_SET_CONFIG_BOOL_VALUE(
+        interp,
+        "Invalid [graphics].interp value, interp fix disabled",
+        "Interp fix enabled",
+        "Interp fix disabled"
+    );
+
+    GET_SET_CONFIG_BOOL_VALUE(
+        linear,
+        "Invalid [graphics].linear value, not forcing linear filter",
+        "Forcing linear filter",
+        "Not forcing linear filter"
+    );
+
+    GET_SET_CONFIG_BOOL_VALUE(
+        enhanced,
+        "Invalid [graphics].enhanced value, enhanced interp disabled",
+        "Enhanced interp enabled",
+        "Enhanced interp disabled"
+    );
 
 #ifdef _UNICODE
 #define GET_UTF8_VAL(v) do { \
@@ -304,26 +313,19 @@ if constexpr (ENABLE_LOGGER) {
 } while (0)
 #endif
 
-if constexpr (ENABLE_SLANG_SHADER) {
-    GET_INI_VALUE(slang_shader);
-    {
-        std::string val;
-        GET_UTF8_VAL(val);
-        if (val != config->slang_shader) {
-            config->slang_shader = val;
-            config->slang_shader_updated = true;
-        }
-    }
+#define GET_SET_CONFIG_UTF8_VALUE(v) do { \
+    GET_INI_VALUE(v); \
+    std::string v; \
+    GET_UTF8_VAL(v); \
+    if (v != config->v) { \
+        config->v = v; \
+        config->v ## _updated = true; \
+    } \
+} while (0)
 
-    GET_INI_VALUE(slang_shader_3d);
-    {
-        std::string val;
-        GET_UTF8_VAL(val);
-        if (val != config->slang_shader_3d) {
-            config->slang_shader_3d = val;
-            config->slang_shader_3d_updated = true;
-        }
-    }
+if constexpr (ENABLE_SLANG_SHADER) {
+    GET_SET_CONFIG_UTF8_VALUE(slang_shader);
+    GET_SET_CONFIG_UTF8_VALUE(slang_shader_3d);
 }
 
 #define GET_LONG_VALUE(v) do { \

@@ -11,12 +11,12 @@ class MyID3D10Texture2D;
 class MyIDXGISwapChain : public IDXGISwapChain {
     Overlay *overlay;
     MyID3D10Device *my_device;
-    UINT current_width;
-    UINT current_height;
-    UINT current_flags;
-    UINT current_buffer_count;
-    DXGI_FORMAT current_format;
-    bool is_config_size = false;
+    UINT cached_width;
+    UINT cached_height;
+    UINT cached_flags;
+    UINT cached_buffer_count;
+    DXGI_FORMAT cached_format;
+    bool is_config_display = false;
 
     struct Config {
         UINT render_3d_width;

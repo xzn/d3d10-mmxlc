@@ -38,6 +38,7 @@ class MyID3D10Device : public ID3D10Device {
 
     struct Config {
         bool interp;
+        bool linear;
         bool enhanced;
     } config = {};
     void update_config();
@@ -73,12 +74,17 @@ class MyID3D10Device : public ID3D10Device {
         ID3D10DepthStencilView *&dsv,
         DXGI_FORMAT format
     );
-    bool get_render_tex_views(
+    bool set_render_tex_views_and_update(
         MyID3D10Texture2D *tex,
         UINT width,
         UINT height,
         UINT orig_width,
-        UINT orig_height
+        UINT orig_height,
+        bool need_vp = false
+    );
+    bool set_render_tex_views_and_update(
+        ID3D10Resource *r,
+        bool need_vp = false
     );
     void create_tex_and_views_nn(
         TextureAndViews *tex,
@@ -117,41 +123,44 @@ class MyID3D10Device : public ID3D10Device {
         UINT render_3d_width;
         UINT render_3d_height;
         void resize(UINT width, UINT height);
-    } orig_size = {}, current_size = {};
+    } cached_size = {}, render_size = {};
 
-    MyID3D10PixelShader *current_ps = NULL;
-    ID3D10VertexShader *current_vs = NULL;
-    ID3D10GeometryShader *current_gs = NULL;
-    ID3D10InputLayout *current_il = NULL;
-    MyID3D10SamplerState *current_psss = NULL;
-    ID3D10SamplerState *current_pssss[MAX_SAMPLERS] = {};
-    MyID3D10RenderTargetView *current_rtv = NULL;
-    MyID3D10DepthStencilView *current_dsv = NULL;
-    MyID3D10ShaderResourceView *current_pssrv = NULL;
-    ID3D10ShaderResourceView *current_pssrvs[MAX_SHADER_RESOURCES] = {};
-    D3D10_PRIMITIVE_TOPOLOGY current_pt = D3D10_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    MyID3D10PixelShader *cached_ps = NULL;
+    ID3D10VertexShader *cached_vs = NULL;
+    ID3D10GeometryShader *cached_gs = NULL;
+    ID3D10InputLayout *cached_il = NULL;
+    MyID3D10SamplerState *cached_psss = NULL;
+    MyID3D10SamplerState *cached_pssss[MAX_SAMPLERS] = {};
+    ID3D10SamplerState *render_pssss[MAX_SAMPLERS] = {};
+    MyID3D10RenderTargetView *cached_rtv = NULL;
+    MyID3D10DepthStencilView *cached_dsv = NULL;
+    MyID3D10ShaderResourceView *cached_pssrv = NULL;
+    MyID3D10ShaderResourceView *cached_pssrvs[MAX_SHADER_RESOURCES] = {};
+    ID3D10ShaderResourceView *render_pssrvs[MAX_SHADER_RESOURCES] = {};
+    D3D10_PRIMITIVE_TOPOLOGY cached_pt = D3D10_PRIMITIVE_TOPOLOGY_UNDEFINED;
     struct BlendState {
         ID3D10BlendState *pBlendState;
         FLOAT BlendFactor[4];
         UINT SampleMask;
-    } current_bs = {};
+    } cached_bs = {};
     struct VertexBuffers {
         ID3D10Buffer *ppVertexBuffers[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
         UINT pStrides[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
         UINT pOffsets[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-    } current_vbs = {};
-    ID3D10Buffer *current_pscbs[MAX_CONSTANT_BUFFERS] = {};
-    ID3D10Buffer *current_vscbs[MAX_CONSTANT_BUFFERS] = {};
+    } cached_vbs = {};
+    ID3D10Buffer *cached_pscbs[MAX_CONSTANT_BUFFERS] = {};
+    ID3D10Buffer *cached_vscbs[MAX_CONSTANT_BUFFERS] = {};
     UINT render_width = 0;
     UINT render_height = 0;
     UINT render_orig_width = 0;
     UINT render_orig_height = 0;
-    D3D10_VIEWPORT current_vp = {};
-    D3D10_VIEWPORT orig_vp = {};
-    bool need_current_vp = false;
-    bool is_current_vp = false;
+    D3D10_VIEWPORT render_vp = {};
+    D3D10_VIEWPORT cached_vp = {};
+    bool need_render_vp = false;
+    bool is_render_vp = false;
     void set_render_vp();
     void reset_render_vp();
+    bool render_3d = false;
     UINT render_3d_width = 0;
     UINT render_3d_height = 0;
 

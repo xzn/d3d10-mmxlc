@@ -8,13 +8,16 @@ IUNKNOWN_IMPL(MyID3D10Texture3D)
 
 MyID3D10Texture3D::MyID3D10Texture3D(
     ID3D10Texture3D **inner,
-    const D3D10_TEXTURE3D_DESC *pDesc
+    const D3D10_TEXTURE3D_DESC *pDesc,
+    UINT64 id
 ) :
     desc(*pDesc),
-    IUNKNOWN_INIT(*inner)
+    IUNKNOWN_INIT(*inner),
+    id(id)
 {
     LOG_MFUN(_,
-        LOG_ARG(*inner)
+        LOG_ARG(*inner),
+        LOG_ARG_TYPE(id, NumHexLogger)
     );
     *inner = this;
 }

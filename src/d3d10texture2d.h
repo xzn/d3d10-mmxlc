@@ -24,6 +24,7 @@ public:
     MyID3D10Texture2D(
         ID3D10Texture2D **inner,
         const D3D10_TEXTURE2D_DESC *pDesc,
+        UINT64 id,
         MyIDXGISwapChain *sc = NULL
     );
 

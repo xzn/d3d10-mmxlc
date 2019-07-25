@@ -9,10 +9,16 @@ IUNKNOWN_IMPL(MyID3D10PixelShader)
 MyID3D10PixelShader::MyID3D10PixelShader(
     ID3D10PixelShader **inner,
     DWORD bytecode_hash,
-    SIZE_T bytecode_length
+    SIZE_T bytecode_length,
+    std::string source
 ) :
     bytecode_hash(bytecode_hash),
     bytecode_length(bytecode_length),
+    source(source),
+    alpha_discard(
+        source.find("AlphaRef") != std::string::npos &&
+        source.find("discard") != std::string::npos
+    ),
     IUNKNOWN_INIT(*inner)
 {
     LOG_MFUN(_,
@@ -20,15 +26,15 @@ MyID3D10PixelShader::MyID3D10PixelShader(
         LOG_ARG_TYPE(bytecode_hash, NumHexLogger),
         LOG_ARG(bytecode_length)
     );
-    current_pss_map.emplace(*inner, this);
+    cached_pss_map.emplace(*inner, this);
     *inner = this;
 }
 
 MyID3D10PixelShader::~MyID3D10PixelShader() {
     LOG_MFUN();
-    current_pss_map.erase(inner);
+    cached_pss_map.erase(inner);
 }
 
 ID3D10DEVICECHILD_IMPL(MyID3D10PixelShader)
 
-std::unordered_map<ID3D10PixelShader *, MyID3D10PixelShader *> current_pss_map;
+std::unordered_map<ID3D10PixelShader *, MyID3D10PixelShader *> cached_pss_map;

@@ -8,21 +8,24 @@ IUNKNOWN_IMPL(MyID3D10SamplerState)
 
 MyID3D10SamplerState::MyID3D10SamplerState(
     ID3D10SamplerState **inner,
-    const D3D10_SAMPLER_DESC *pDesc
+    const D3D10_SAMPLER_DESC *pDesc,
+    ID3D10SamplerState *linear
 ) :
     desc(*pDesc),
+    linear(linear),
     IUNKNOWN_INIT(*inner)
 {
     LOG_MFUN(_,
         LOG_ARG(*inner)
     );
-    current_sss_map.emplace(*inner, this);
+    cached_sss_map.emplace(*inner, this);
     *inner = this;
 }
 
 MyID3D10SamplerState::~MyID3D10SamplerState() {
     LOG_MFUN();
-    current_sss_map.erase(inner);
+    if (linear) linear->Release();
+    cached_sss_map.erase(inner);
 }
 
 void STDMETHODCALLTYPE MyID3D10SamplerState::GetDesc(
@@ -34,4 +37,4 @@ void STDMETHODCALLTYPE MyID3D10SamplerState::GetDesc(
 
 ID3D10DEVICECHILD_IMPL(MyID3D10SamplerState)
 
-std::unordered_map<ID3D10SamplerState *, MyID3D10SamplerState *> current_sss_map;
+std::unordered_map<ID3D10SamplerState *, MyID3D10SamplerState *> cached_sss_map;

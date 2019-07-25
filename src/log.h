@@ -3,16 +3,29 @@
 
 #include "main.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wreorder"
+#include "../HLSLcc/include/hlslcc.h"
+#pragma GCC diagnostic pop
+
+class MyID3D10Buffer;
+class MyID3D10Texture1D;
+class MyID3D10Texture2D;
+class MyID3D10Texture3D;
+class MyID3D10ShaderResourceView;
+class MyID3D10RenderTargetView;
+class MyID3D10DepthStencilView;
+
 template<class T>
 struct DefaultLogger {
     T a;
-    DefaultLogger(T a) : a(a) {}
+    explicit DefaultLogger(T a) : a(a) {}
 };
 
 template<int L, class T>
 struct NumLenLoggerBase {
     T a;
-    NumLenLoggerBase(T a) : a(a) {}
+    explicit NumLenLoggerBase(T a) : a(a) {}
 };
 template<int L, class T>
 NumLenLoggerBase<L, T> NumLenLogger(T a) {
@@ -20,9 +33,20 @@ NumLenLoggerBase<L, T> NumLenLogger(T a) {
 }
 
 template<class T>
+decltype(auto) constptr_Logger(T *a) {
+    return (const T*)a;
+}
+
+template<class T>
 struct NumHexLogger {
     T a;
-    NumHexLogger(T a) : a(a) {}
+    explicit NumHexLogger(T a) : a(a) {}
+};
+
+template<class T>
+struct NumBinLogger {
+    T a;
+    explicit NumBinLogger(T a) : a(a) {}
 };
 
 struct HotkeyLogger {
@@ -42,6 +66,10 @@ template<class T>
 struct Ref {
     T *operator()(T *a) const { return a; }
 };
+template<class T, class TT>
+struct Ctor {
+    T operator()(TT *a) const { return T(*a); }
+};
 template<class T>
 ArrayLoggerBase<Deref<T>, T> ArrayLoggerDeref(T *a, size_t n) {
     return {a, n};
@@ -50,10 +78,15 @@ template<class T>
 ArrayLoggerBase<Ref<T>, T> ArrayLoggerRef(T *a, size_t n) {
     return {a, n};
 }
+template<class T, class TT>
+std::enable_if_t<std::is_constructible_v<T, TT>, ArrayLoggerBase<Ctor<T, TT>, TT>>
+ArrayLoggerCtor(TT *a, size_t n) {
+    return {a, n};
+}
 
 struct StringLogger {
     LPCSTR a;
-    StringLogger(LPCSTR a);
+    explicit StringLogger(LPCSTR a);
 };
 
 struct RawStringLogger {
@@ -62,35 +95,57 @@ struct RawStringLogger {
     RawStringLogger(LPCSTR a, LPCSTR p);
 };
 
+struct ByteArrayLogger {
+    const char *b;
+    UINT n;
+    ByteArrayLogger(const void *b, UINT n);
+};
+
 struct CharLogger {
     CHAR a;
-    CharLogger(CHAR a);
+    explicit CharLogger(CHAR a);
 };
 
 struct ShaderLogger {
     const void *a;
-    SIZE_T n;
-    ShaderLogger(const void *a, SIZE_T n);
+    GLSLShader result;
+    explicit ShaderLogger(const void *a);
 };
 
 struct D3D10_CLEAR_Logger {
     UINT a;
-    D3D10_CLEAR_Logger(UINT a);
+    explicit D3D10_CLEAR_Logger(UINT a);
 };
 
 struct D3D10_BIND_Logger {
     UINT a;
-    D3D10_BIND_Logger(UINT a);
+    explicit D3D10_BIND_Logger(UINT a);
 };
 
 struct D3D10_CPU_ACCESS_Logger {
     UINT a;
-    D3D10_CPU_ACCESS_Logger(UINT a);
+    explicit D3D10_CPU_ACCESS_Logger(UINT a);
 };
 
 struct D3D10_RESOURCE_MISC_Logger {
     UINT a;
-    D3D10_RESOURCE_MISC_Logger(UINT a);
+    explicit D3D10_RESOURCE_MISC_Logger(UINT a);
+};
+
+struct D3D10_SUBRESOURCE_DATA_Logger {
+    const D3D10_SUBRESOURCE_DATA *pInitialData;
+    UINT ByteWidth;
+    D3D10_SUBRESOURCE_DATA_Logger(const D3D10_SUBRESOURCE_DATA *, UINT);
+};
+
+struct ID3D10Resource_id_Logger {
+    UINT64 id;
+    explicit ID3D10Resource_id_Logger(UINT64);
+};
+
+struct MyID3D10Resource_Logger {
+    const ID3D10Resource *r;
+    explicit MyID3D10Resource_Logger(const ID3D10Resource *);
 };
 
 class Logger {
@@ -171,10 +226,12 @@ class Logger {
     void log_null();
 
     template<class T>
-    void log_item(T a) {
+    std::enable_if_t<std::is_arithmetic_v<T>> log_item(T a) {
         oss << a;
     }
+    void log_item(LPCSTR a);
     void log_item(LPCWSTR a);
+    void log_item(const std::string &a);
 
     template<class T>
     void log_item(T *a) {
@@ -192,6 +249,23 @@ class Logger {
     void log_item(NumHexLogger<T> a) {
         oss << std::hex << std::showbase << +a.a;
         oss.flags(std::ios::fmtflags{});
+    }
+
+    template<class T>
+    void log_item(NumBinLogger<T> a) {
+        LPBYTE b = &a.a;
+        UINT n = sizeof(a.a);
+        UINT bits = std::numeric_limits<BYTE>::digits;
+        oss << "0b";
+        for (UINT i = n; i > 0;) {
+            --i;
+            BYTE c = b[i];
+            BYTE m = (BYTE)1 << (bits - 1);
+            for (UINT j = 0; j < bits; ++j) {
+                oss << (c & m ? "1" : "0");
+                c <<= 1;
+            }
+        }
     }
 
     template<class TT, class T>
@@ -253,6 +327,7 @@ class Logger {
 
     void log_item(StringLogger a);
     void log_item(RawStringLogger a);
+    void log_item(ByteArrayLogger a);
     void log_item(CharLogger a);
     void log_item(ShaderLogger a);
     void log_item(D3D10_CLEAR_Logger a);
@@ -281,6 +356,21 @@ class Logger {
     void log_item(const D3D10_DEPTH_STENCIL_VIEW_DESC *a);
     void log_item(D3D10_PRIMITIVE_TOPOLOGY a);
     void log_item(const D3D10_VIEWPORT *a);
+    void log_item(D3D10_SUBRESOURCE_DATA_Logger a);
+    void log_item(D3D10_MAP a);
+    void log_item(D3D10_MAP_FLAG a);
+    void log_item(ID3D10Resource_id_Logger a);
+    void log_item(const MyID3D10Buffer *a);
+    void log_item(const MyID3D10Texture1D *a);
+    void log_item(const MyID3D10Texture2D *a);
+    void log_item(const MyID3D10Texture3D *a);
+    void log_item(const MyID3D10ShaderResourceView *a);
+    void log_item(const MyID3D10RenderTargetView *a);
+    void log_item(const MyID3D10DepthStencilView *a);
+    void log_item(MyID3D10Resource_Logger a);
+    void log_item(const D3D10_BLEND_DESC *a);
+    void log_item(D3D10_BLEND a);
+    void log_item(D3D10_BLEND_OP a);
 
     void log_items_base();
     template<class T, class... Ts>
@@ -388,8 +478,8 @@ public:
 };
 extern Logger *default_logger;
 
-#define LOG_STRUCT_MEMBER(n) "." #n, STRUCT->n
-#define LOG_STRUCT_MEMBER_TYPE(n, t, ...) "." #n, t(STRUCT->n, ## __VA_ARGS__)
+#define LOG_STRUCT_MEMBER(n) "." #n, (STRUCT)->n
+#define LOG_STRUCT_MEMBER_TYPE(n, t, ...) "." #n, t((STRUCT)->n, ## __VA_ARGS__)
 #define LOG_ARG(n) #n, n
 #define LOG_ARG_TYPE(n, t, ...) #n, t(n, ## __VA_ARGS__)
 

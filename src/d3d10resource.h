@@ -4,6 +4,8 @@
 #include "d3d10devicechild.h"
 
 #define ID3D10RESOURCE_DECL \
+    UINT64 id; \
+ \
     virtual void STDMETHODCALLTYPE GetType( \
         D3D10_RESOURCE_DIMENSION *rType \
     ); \

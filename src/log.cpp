@@ -2,18 +2,38 @@
 #include "overlay.h"
 #include "conf.h"
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreorder"
-#include "../HLSLcc/include/hlslcc.h"
-#pragma GCC diagnostic pop
+#include "d3d10buffer.h"
+#include "d3d10texture1d.h"
+#include "d3d10texture2d.h"
+#include "d3d10texture3d.h"
+#include "d3d10rendertargetview.h"
+#include "d3d10shaderresourceview.h"
+#include "d3d10depthstencilview.h"
 
 StringLogger::StringLogger(LPCSTR a) : a(a) {}
 
 RawStringLogger::RawStringLogger(LPCSTR a, LPCSTR p) : a(a), p(p) {}
 
+ByteArrayLogger::ByteArrayLogger(const void *b, UINT n) : b((const char *)b), n(n) {}
+
 CharLogger::CharLogger(CHAR a) : a(a) {}
 
-ShaderLogger::ShaderLogger(const void *a, SIZE_T n) : a(a), n(n) {}
+ShaderLogger::ShaderLogger(const void *a) : a(a), result{} {
+    GlExtensions extensions{};
+    HLSLccSamplerPrecisionInfo samplerPrecisions{};
+    HLSLccReflection reflectionCallbacks{};
+
+    TranslateHLSLFromMem(
+        (const char *)a,
+        0,
+        LANG_DEFAULT,
+        &extensions,
+        NULL,
+        samplerPrecisions,
+        reflectionCallbacks,
+        &result
+    );
+}
 
 D3D10_CLEAR_Logger::D3D10_CLEAR_Logger(UINT a) : a(a) {}
 
@@ -22,6 +42,15 @@ D3D10_BIND_Logger::D3D10_BIND_Logger(UINT a) : a(a) {}
 D3D10_CPU_ACCESS_Logger::D3D10_CPU_ACCESS_Logger(UINT a) : a(a) {}
 
 D3D10_RESOURCE_MISC_Logger::D3D10_RESOURCE_MISC_Logger(UINT a) : a(a) {}
+
+D3D10_SUBRESOURCE_DATA_Logger::D3D10_SUBRESOURCE_DATA_Logger(
+    const D3D10_SUBRESOURCE_DATA *p,
+    UINT n
+) : pInitialData(p), ByteWidth(n) {}
+
+ID3D10Resource_id_Logger::ID3D10Resource_id_Logger(UINT64 id) : id(id) {}
+
+MyID3D10Resource_Logger::MyID3D10Resource_Logger(const ID3D10Resource *r) : r(r) {}
 
 bool Logger::file_init() {
     if (file != INVALID_HANDLE_VALUE) return true;
@@ -51,13 +80,11 @@ void Logger::file_shutdown() {
 bool Logger::log_begin() {
     if (!started) goto e_started;
     EnterCriticalSection(&oss_cs);
-    if (file == INVALID_HANDLE_VALUE && !file_init()) goto e_file_init;
-    oss.clear();
-    oss.seekp(0);
+    if (oss.tellp() || (file == INVALID_HANDLE_VALUE && !file_init())) goto e_init;
     log_items_base("(", frame_count, ")(", GetCurrentThreadId(), ")");
     return true;
 
-e_file_init:
+e_init:
     LeaveCriticalSection(&oss_cs);
 e_started:
     return false;
@@ -70,6 +97,8 @@ void Logger::log_end() {
     if (len != -1) {
         WriteFile(file, oss.str().c_str(), len, &written, NULL);
     }
+    oss.clear();
+    oss.seekp(0);
     LeaveCriticalSection(&oss_cs);
 }
 
@@ -145,11 +174,19 @@ void Logger::log_null() {
     log_item("NULL");
 }
 
+void Logger::log_item(LPCSTR a) {
+    oss << a;
+}
+
 void Logger::log_item(LPCWSTR a) {
     int len = WideCharToMultiByte(CP_UTF8, 0, a, -1, NULL, 0, NULL, NULL);
     CHAR b[len] = {};
     WideCharToMultiByte(CP_UTF8, 0, a, -1, b, len, NULL, NULL);
     log_item(b);
+}
+
+void Logger::log_item(const std::string &a) {
+    oss << a;
 }
 
 void Logger::log_flag_sep() {
@@ -174,6 +211,15 @@ void Logger::log_item(RawStringLogger a) {
     log_item(')');
     log_item(a.p);
     log_item('"');
+}
+
+void Logger::log_item(ByteArrayLogger a) {
+    log_array_begin();
+    for (UINT i = 0; i < a.n; ++i) {
+        if (i) log_array_sep();
+        log_item(NumHexLogger(BYTE(a.b[i])));
+    }
+    log_array_end();
 }
 
 void Logger::log_item(CharLogger a) {
@@ -205,33 +251,13 @@ const ENUM_MAP(GLLang) GLLang_ENUM_MAP = {
 const char *hlslcc_prefix = "HLSLcc_";
 #define LOG_SHADER_DELIM() do { \
     log_item(hlslcc_prefix); \
-    log_enum(GLLang_ENUM_MAP, result.GLSLLanguage); \
+    log_enum(GLLang_ENUM_MAP, a.result.GLSLLanguage); \
 } while (0)
 void Logger::log_item(ShaderLogger a) {
-    char shader[a.n + 1] = {};
-    memcpy(shader, a.a, a.n);
-    shader[a.n] = 0;
-
-    GlExtensions extensions{};
-    HLSLccSamplerPrecisionInfo samplerPrecisions{};
-    HLSLccReflection reflectionCallbacks{};
-    GLSLShader result{};
-
-    TranslateHLSLFromMem(
-        shader,
-        0,
-        LANG_DEFAULT,
-        &extensions,
-        NULL,
-        samplerPrecisions,
-        reflectionCallbacks,
-        &result
-    );
-
     log_item("R\"");
     LOG_SHADER_DELIM();
     log_item('(');
-    log_item(result.sourceCode);
+    log_item(a.result.sourceCode);
     log_item(')');
     LOG_SHADER_DELIM();
     log_item('"');
@@ -665,6 +691,217 @@ void Logger::log_item(const D3D10_VIEWPORT *a) {
         LOG_STRUCT_MEMBER(MaxDepth)
 #undef STRUCT
     );
+}
+
+void Logger::log_item(D3D10_SUBRESOURCE_DATA_Logger a) {
+    if (!a.pInitialData) { log_null(); return; }
+    UINT ByteWidth =
+        a.pInitialData->SysMemPitch ||
+        a.pInitialData->SysMemSlicePitch ?
+            0 :
+            a.ByteWidth;
+    log_struct_named(
+#define STRUCT a.pInitialData
+        LOG_STRUCT_MEMBER_TYPE(pSysMem, ByteArrayLogger, ByteWidth),
+        LOG_STRUCT_MEMBER(SysMemPitch),
+        LOG_STRUCT_MEMBER(SysMemSlicePitch)
+#undef STRUCT
+    );
+}
+
+const ENUM_MAP(D3D10_MAP) D3D10_MAP_ENUM_MAP = {
+    ENUM_MAP_ITEM(D3D10_MAP_READ)
+    ENUM_MAP_ITEM(D3D10_MAP_WRITE)
+    ENUM_MAP_ITEM(D3D10_MAP_READ_WRITE)
+    ENUM_MAP_ITEM(D3D10_MAP_WRITE_DISCARD)
+    ENUM_MAP_ITEM(D3D10_MAP_WRITE_NO_OVERWRITE)
+};
+
+void Logger::log_item(D3D10_MAP a) {
+    log_enum(D3D10_MAP_ENUM_MAP, a);
+}
+
+const ENUM_MAP(D3D10_MAP_FLAG) D3D10_MAP_FLAG_ENUM_MAP = {
+    ENUM_MAP_ITEM(D3D10_MAP_FLAG_DO_NOT_WAIT)
+};
+
+void Logger::log_item(D3D10_MAP_FLAG a) {
+    log_enum(D3D10_MAP_FLAG_ENUM_MAP, a);
+}
+
+void Logger::log_item(ID3D10Resource_id_Logger a) {
+    log_struct_begin();
+    log_item(NumHexLogger(a.id));
+    log_struct_end();
+}
+
+void Logger::log_item(const MyID3D10Buffer *a) {
+    log_item((void *)a);
+    if (a) log_item(ID3D10Resource_id_Logger(a->id));
+}
+
+void Logger::log_item(const MyID3D10Texture1D *a) {
+    log_item((void *)a);
+    if (a) log_item(ID3D10Resource_id_Logger(a->id));
+}
+
+void Logger::log_item(const MyID3D10Texture2D *a) {
+    log_item((void *)a);
+    if (a) log_item(ID3D10Resource_id_Logger(a->id));
+}
+
+void Logger::log_item(const MyID3D10Texture3D *a) {
+    log_item((void *)a);
+    if (a) log_item(ID3D10Resource_id_Logger(a->id));
+}
+
+void Logger::log_item(const MyID3D10ShaderResourceView *a) {
+    log_item((void *)a);
+    if (a) {
+        switch (a->desc.ViewDimension) {
+            case D3D10_SRV_DIMENSION_BUFFER:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Buffer *)a->resource)->id));
+                break;
+
+            case D3D10_SRV_DIMENSION_TEXTURE1D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture1D *)a->resource)->id));
+                break;
+
+            case D3D10_SRV_DIMENSION_TEXTURE2D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture2D *)a->resource)->id));
+                break;
+
+            case D3D10_SRV_DIMENSION_TEXTURE3D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture3D *)a->resource)->id));
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
+void Logger::log_item(const MyID3D10RenderTargetView *a) {
+    log_item((void *)a);
+    if (a) {
+        switch (a->desc.ViewDimension) {
+            case D3D10_RTV_DIMENSION_BUFFER:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Buffer *)a->resource)->id));
+                break;
+
+            case D3D10_RTV_DIMENSION_TEXTURE1D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture1D *)a->resource)->id));
+                break;
+
+            case D3D10_RTV_DIMENSION_TEXTURE2D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture2D *)a->resource)->id));
+                break;
+
+            case D3D10_RTV_DIMENSION_TEXTURE3D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture3D *)a->resource)->id));
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
+void Logger::log_item(const MyID3D10DepthStencilView *a) {
+    log_item((void *)a);
+    if (a) {
+        switch (a->desc.ViewDimension) {
+            case D3D10_DSV_DIMENSION_TEXTURE1D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture1D *)a->resource)->id));
+                break;
+
+            case D3D10_DSV_DIMENSION_TEXTURE2D:
+                log_item(ID3D10Resource_id_Logger(((MyID3D10Texture2D *)a->resource)->id));
+                break;
+
+            default:
+                break;
+        }
+    }
+}
+
+void Logger::log_item(MyID3D10Resource_Logger a) {
+    if (!a.r) { log_null(); return; }
+    D3D10_RESOURCE_DIMENSION type;
+    ((ID3D10Resource *)a.r)->GetType(&type);
+    switch (type) {
+        case D3D10_RESOURCE_DIMENSION_BUFFER:
+            log_item((const MyID3D10Buffer *)a.r);
+            break;
+
+        case D3D10_RESOURCE_DIMENSION_TEXTURE1D:
+            log_item((const MyID3D10Texture1D *)a.r);
+            break;
+
+        case D3D10_RESOURCE_DIMENSION_TEXTURE2D:
+            log_item((const MyID3D10Texture2D *)a.r);
+            break;
+
+        case D3D10_RESOURCE_DIMENSION_TEXTURE3D:
+            log_item((const MyID3D10Texture3D *)a.r);
+            break;
+
+        default:
+            log_item((void *)a.r);
+            break;
+    }
+}
+
+void Logger::log_item(const D3D10_BLEND_DESC *a) {
+    log_struct_named(
+#define STRUCT a
+        LOG_STRUCT_MEMBER(AlphaToCoverageEnable),
+        LOG_STRUCT_MEMBER_TYPE(BlendEnable, ArrayLoggerRef, 8),
+        LOG_STRUCT_MEMBER(SrcBlend),
+        LOG_STRUCT_MEMBER(DestBlend),
+        LOG_STRUCT_MEMBER(BlendOp),
+        LOG_STRUCT_MEMBER(SrcBlendAlpha),
+        LOG_STRUCT_MEMBER(DestBlendAlpha),
+        LOG_STRUCT_MEMBER(BlendOpAlpha),
+        LOG_STRUCT_MEMBER_TYPE(RenderTargetWriteMask, ArrayLoggerCtor<NumBinLogger<UINT8>>, 8)
+#undef STRUCT
+    );
+}
+
+const ENUM_MAP(D3D10_BLEND) D3D10_BLEND_ENUM_MAP = {
+    ENUM_MAP_ITEM(D3D10_BLEND_ZERO)
+    ENUM_MAP_ITEM(D3D10_BLEND_ONE)
+    ENUM_MAP_ITEM(D3D10_BLEND_SRC_COLOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_SRC_COLOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_SRC_ALPHA)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_SRC_ALPHA)
+    ENUM_MAP_ITEM(D3D10_BLEND_DEST_ALPHA)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_DEST_ALPHA)
+    ENUM_MAP_ITEM(D3D10_BLEND_DEST_COLOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_DEST_COLOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_SRC_ALPHA_SAT)
+    ENUM_MAP_ITEM(D3D10_BLEND_BLEND_FACTOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_BLEND_FACTOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_SRC1_COLOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_SRC1_COLOR)
+    ENUM_MAP_ITEM(D3D10_BLEND_SRC1_ALPHA)
+    ENUM_MAP_ITEM(D3D10_BLEND_INV_SRC1_ALPHA)
+};
+
+void Logger::log_item(D3D10_BLEND a) {
+    log_enum(D3D10_BLEND_ENUM_MAP, a);
+}
+
+const ENUM_MAP(D3D10_BLEND_OP) D3D10_BLEND_OP_ENUM_MAP = {
+    ENUM_MAP_ITEM(D3D10_BLEND_OP_ADD)
+    ENUM_MAP_ITEM(D3D10_BLEND_OP_SUBTRACT)
+    ENUM_MAP_ITEM(D3D10_BLEND_OP_REV_SUBTRACT)
+    ENUM_MAP_ITEM(D3D10_BLEND_OP_MIN)
+    ENUM_MAP_ITEM(D3D10_BLEND_OP_MAX)
+};
+
+void Logger::log_item(D3D10_BLEND_OP a) {
+    log_enum(D3D10_BLEND_OP_ENUM_MAP, a);
 }
 
 void Logger::log_item(const D3D10_TEXTURE3D_DESC *desc) {

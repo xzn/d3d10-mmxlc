@@ -13,6 +13,8 @@
 #define LOGGER default_logger
 #define LOG_MFUN(_, ...) LOG_MFUN_DEF(MyIDXGISwapChain, ## __VA_ARGS__)
 
+extern UINT64 xorshift128p();
+
 IUNKNOWN_IMPL(MyIDXGISwapChain)
 
 void MyIDXGISwapChain::update_config() {
@@ -26,8 +28,7 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
             config.render_3d_updated = true;
         }
 
-        if (config.display_width != default_config->display_width ||
-            config.display_height != default_config->display_height) {
+        if (config.display_width != default_config->display_width || config.display_height != default_config->display_height) {
             config.display_width = default_config->display_width;
             config.display_height = default_config->display_height;
             config.display_updated = true;
@@ -38,10 +39,10 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         LeaveCriticalSection(&default_config->cs);
     }
 
-    if ((config.display_updated || is_config_size) && (config.display_flags != current_flags || config.display_buffer_count != current_buffer_count || config.display_format != current_format)) {
-        config.display_flags = current_flags;
-        config.display_buffer_count = current_buffer_count;
-        config.display_format = current_format;
+    if ((config.display_updated || is_config_display) && (config.display_flags != cached_flags || config.display_buffer_count != cached_buffer_count || config.display_format != cached_format)) {
+        config.display_flags = cached_flags;
+        config.display_buffer_count = cached_buffer_count;
+        config.display_format = cached_format;
         config.display_updated = true;
     }
 
@@ -51,21 +52,21 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         for (MyID3D10Texture2D *bb : bbs) {
             for (MyID3D10RenderTargetView *rtv : bb->rtvs) {
                 if (rtv->inner) {
-                    current_rtvs_map.erase(rtv->inner);
+                    cached_rtvs_map.erase(rtv->inner);
                     rtv->inner->Release();
                     rtv->inner = NULL;
                 }
             }
             for (MyID3D10ShaderResourceView *srv : bb->srvs) {
                 if (srv->inner) {
-                    current_srvs_map.erase(srv->inner);
+                    cached_srvs_map.erase(srv->inner);
                     srv->inner->Release();
                     srv->inner = NULL;
                 }
             }
             for (MyID3D10DepthStencilView *dsv : bb->dsvs) {
                 if (dsv->inner) {
-                    current_dsvs_map.erase(dsv->inner);
+                    cached_dsvs_map.erase(dsv->inner);
                     dsv->inner->Release();
                     dsv->inner = NULL;
                 }
@@ -79,15 +80,15 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         if (config.display_width && config.display_height) {
             HRESULT ret = my_resize_buffers(config.display_width, config.display_height, config.display_flags, config.display_buffer_count, config.display_format);
             if (ret == S_OK) {
-                is_config_size = true;
+                is_config_display = true;
                 Overlay::push_text("Display resolution set to ", std::to_string(config.display_width), "x", std::to_string(config.display_height));
             } else {
                 Overlay::push_text("Failed to set display resolution to ", std::to_string(config.display_width), "x", std::to_string(config.display_height));
             }
         } else {
-            my_resize_buffers(current_width, current_height, current_flags, current_buffer_count, current_format);
-            Overlay::push_text("Restoring display resolution to ", std::to_string(current_width), "x", std::to_string(current_height));
-            is_config_size = false;
+            my_resize_buffers(cached_width, cached_height, cached_flags, cached_buffer_count, cached_format);
+            Overlay::push_text("Restoring display resolution to ", std::to_string(cached_width), "x", std::to_string(cached_height));
+            is_config_display = false;
         }
 
         for (MyID3D10Texture2D *bb : bbs) {
@@ -98,15 +99,15 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
             );
             for (MyID3D10RenderTargetView *rtv : bb->rtvs) {
                 my_device->inner->CreateRenderTargetView(bb->inner, &rtv->desc, &rtv->inner);
-                current_rtvs_map.emplace(rtv->inner, rtv);
+                cached_rtvs_map.emplace(rtv->inner, rtv);
             }
             for (MyID3D10ShaderResourceView *srv : bb->srvs) {
                 my_device->inner->CreateShaderResourceView(bb->inner, &srv->desc, &srv->inner);
-                current_srvs_map.emplace(srv->inner, srv);
+                cached_srvs_map.emplace(srv->inner, srv);
             }
             for (MyID3D10DepthStencilView *dsv : bb->dsvs) {
                 my_device->inner->CreateDepthStencilView(bb->inner, &dsv->desc, &dsv->inner);
-                current_dsvs_map.emplace(dsv->inner, dsv);
+                cached_dsvs_map.emplace(dsv->inner, dsv);
             }
             bb->inner->GetDesc(&bb->desc);
         }
@@ -126,11 +127,11 @@ MyIDXGISwapChain::MyIDXGISwapChain(
     IDXGISwapChain **inner,
     ID3D10Device **device
 ) :
-    current_width(pSwapChainDesc->BufferDesc.Width),
-    current_height(pSwapChainDesc->BufferDesc.Height),
-    current_flags(pSwapChainDesc->Flags),
-    current_buffer_count(pSwapChainDesc->BufferCount),
-    current_format(pSwapChainDesc->BufferDesc.Format),
+    cached_width(pSwapChainDesc->BufferDesc.Width),
+    cached_height(pSwapChainDesc->BufferDesc.Height),
+    cached_flags(pSwapChainDesc->Flags),
+    cached_buffer_count(pSwapChainDesc->BufferCount),
+    cached_format(pSwapChainDesc->BufferDesc.Format),
     IUNKNOWN_INIT(*inner)
 {
     LOG_MFUN(_,
@@ -141,9 +142,10 @@ MyIDXGISwapChain::MyIDXGISwapChain(
     default_overlays->insert(overlay);
     my_device = new MyID3D10Device(
         device,
-        current_width,
-        current_height
+        cached_width,
+        cached_height
     );
+    my_device->AddRef();
     *inner = this;
 }
 
@@ -197,7 +199,13 @@ HRESULT STDMETHODCALLTYPE MyIDXGISwapChain::GetBuffer(
         );
         D3D10_TEXTURE2D_DESC desc;
         ((ID3D10Texture2D *)*surface)->GetDesc(&desc);
-        bbs.insert(new MyID3D10Texture2D((ID3D10Texture2D **)surface, &desc, this));
+        D3D10_TEXTURE2D_DESC desc_orig = {
+            .Width = cached_width,
+            .Height = cached_height
+        };
+        MyID3D10Texture2D *bb = new MyID3D10Texture2D((ID3D10Texture2D **)surface, &desc_orig, xorshift128p(), this);
+        bb->desc = desc;
+        bbs.insert(bb);
     } else {
         LOG_MFUN(_,
             LOG_ARG(buffer_idx),
@@ -277,13 +285,13 @@ HRESULT STDMETHODCALLTYPE MyIDXGISwapChain::ResizeBuffers(
 ) {
     LOG_MFUN();
 
-    current_width = width;
-    current_height = height;
-    current_flags = flags;
-    current_buffer_count = buffer_count;
-    current_format = format;
+    cached_width = width;
+    cached_height = height;
+    cached_flags = flags;
+    cached_buffer_count = buffer_count;
+    cached_format = format;
     update_config();
-    HRESULT ret = is_config_size ? S_OK : my_resize_buffers(width, height, flags, buffer_count, format);
+    HRESULT ret = is_config_display ? S_OK : my_resize_buffers(width, height, flags, buffer_count, format);
     if (ret == S_OK) my_device->resize_orig_buffers(width, height);
 
     return ret;

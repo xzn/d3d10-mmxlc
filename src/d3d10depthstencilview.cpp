@@ -19,14 +19,14 @@ MyID3D10DepthStencilView::MyID3D10DepthStencilView(
     LOG_MFUN(_,
         LOG_ARG(*inner)
     );
-    current_dsvs_map.emplace(*inner, this);
+    cached_dsvs_map.emplace(*inner, this);
     *inner = this;
     resource->AddRef();
 }
 
 MyID3D10DepthStencilView::~MyID3D10DepthStencilView() {
     LOG_MFUN();
-    current_dsvs_map.erase(inner);
+    cached_dsvs_map.erase(inner);
     if (desc.ViewDimension == D3D10_DSV_DIMENSION_TEXTURE2D) {
         MyID3D10Texture2D *texture_2d = (MyID3D10Texture2D *)resource;
         texture_2d->dsvs.erase(this);
@@ -43,4 +43,4 @@ void STDMETHODCALLTYPE MyID3D10DepthStencilView::GetDesc(
 
 ID3D10VIEW_IMPL(MyID3D10DepthStencilView)
 
-std::unordered_map<ID3D10DepthStencilView *, MyID3D10DepthStencilView *> current_dsvs_map;
+std::unordered_map<ID3D10DepthStencilView *, MyID3D10DepthStencilView *> cached_dsvs_map;

@@ -10,16 +10,19 @@ IUNKNOWN_IMPL(MyID3D10Texture2D)
 MyID3D10Texture2D::MyID3D10Texture2D(
     ID3D10Texture2D **inner,
     const D3D10_TEXTURE2D_DESC *pDesc,
+    UINT64 id,
     MyIDXGISwapChain *sc
 ) :
     desc(*pDesc),
     orig_width(pDesc->Width),
     orig_height(pDesc->Height),
     sc(sc),
-    IUNKNOWN_INIT(*inner)
+    IUNKNOWN_INIT(*inner),
+    id(id)
 {
     LOG_MFUN(_,
-        LOG_ARG(*inner)
+        LOG_ARG(*inner),
+        LOG_ARG_TYPE(id, NumHexLogger)
     );
     *inner = this;
 }

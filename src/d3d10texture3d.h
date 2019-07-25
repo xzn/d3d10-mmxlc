@@ -11,7 +11,8 @@ public:
 
     MyID3D10Texture3D(
         ID3D10Texture3D **inner,
-        const D3D10_TEXTURE3D_DESC *pDesc
+        const D3D10_TEXTURE3D_DESC *pDesc,
+        UINT64 id
     );
 
     virtual ~MyID3D10Texture3D();

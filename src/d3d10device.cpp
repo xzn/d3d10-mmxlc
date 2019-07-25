@@ -29,6 +29,31 @@
 #define X4_WIDTH_FILTERED (X4_WIDTH * 2)
 #define X4_HEIGHT_FILTERED (X4_HEIGHT * 2)
 
+// From wikipedia
+static UINT64 xorshift128p_state[2];
+static bool xorshift128p_state_init() {
+    if (!(
+        QueryPerformanceCounter((LARGE_INTEGER *)&xorshift128p_state[0]) &&
+        QueryPerformanceCounter((LARGE_INTEGER *)&xorshift128p_state[1]))
+    ) {
+        xorshift128p_state[0] = GetTickCount64();
+        xorshift128p_state[1] = GetTickCount64();
+    }
+    return xorshift128p_state[0] && xorshift128p_state[1];
+}
+static bool xorshift128p_state_init_status = xorshift128p_state_init();
+UINT64 xorshift128p() {
+    UINT64 *s = xorshift128p_state;
+    UINT64 a = s[0];
+    UINT64 const b = s[1];
+    s[0] = b;
+    a ^= a << 23;		// a
+    a ^= a >> 17;		// b
+    a ^= b ^ (b >> 26);	// c
+    s[1] = a;
+    return a + b;
+}
+
 void MyID3D10Device::clear_filter() {
     filter = false;
     if (filter_state.srv) {
@@ -54,6 +79,7 @@ void MyID3D10Device::clear_filter() {
 
 void MyID3D10Device::update_config() {
     config.interp = default_config->interp;
+    config.linear = default_config->linear;
     config.enhanced = default_config->enhanced;
 
 if constexpr (ENABLE_SLANG_SHADER) {
@@ -119,23 +145,20 @@ void MyID3D10Device::Size::resize(UINT width, UINT height) {
 }
 
 void MyID3D10Device::resize_render_3d(UINT width, UINT height) {
-    render_3d_width = width;
-    render_3d_height = height;
-    if (render_3d_width && render_3d_height) {
+    render_3d = width && height;
+    if (render_3d) {
+        render_3d_width = width;
+        render_3d_height = height;
         Overlay::push_text("3D render resolution set to ", std::to_string(render_3d_width), "x", std::to_string(render_3d_height));
     } else {
-        render_3d_width = current_size.render_3d_width;
-        render_3d_height = current_size.render_3d_height;
-        Overlay::push_text("Restoring 3D render resolution to ", std::to_string(render_3d_width), "x", std::to_string(render_3d_height));
+        render_3d_width = 0;
+        render_3d_height = 0;
+        Overlay::push_text("Restoring 3D render resolution to ", std::to_string(render_size.render_3d_width), "x", std::to_string(render_size.render_3d_height));
     }
 }
 
 void MyID3D10Device::resize_buffers(UINT width, UINT height) {
-    current_size.resize(width, height);
-    if (!render_3d_width || !render_3d_height) {
-        render_3d_width = current_size.render_3d_width;
-        render_3d_height = current_size.render_3d_height;
-    }
+    render_size.resize(width, height);
     clear_filter();
     update_config();
     filter_temp_init();
@@ -143,7 +166,7 @@ void MyID3D10Device::resize_buffers(UINT width, UINT height) {
 }
 
 void MyID3D10Device::resize_orig_buffers(UINT width, UINT height) {
-    orig_size.resize(width, height);
+    cached_size.resize(width, height);
 }
 
 void MyID3D10Device::create_sampler(
@@ -210,8 +233,8 @@ void MyID3D10Device::create_texture_mul(
     UINT &orig_height,
     ID3D10Texture2D *&texture
 ) {
-    UINT width = current_size.render_width;
-    UINT height = current_size.render_height;
+    UINT width = render_size.render_width;
+    UINT height = render_size.render_height;
     get_resolution_mul(width, height, orig_width, orig_height);
     create_texture(width, height, texture);
     orig_width = width;
@@ -330,7 +353,7 @@ void MyID3D10Device::create_tex_and_view_1_v(
     do {
         UINT orig_width_next = orig_width * 2;
         UINT orig_height_next = orig_height * 2;
-        last = orig_width_next >= current_size.render_width && orig_height_next >= current_size.render_height;
+        last = orig_width_next >= render_size.render_width && orig_height_next >= render_size.render_height;
         TextureViewsAndBuffer *tex = new TextureViewsAndBuffer{};
         create_tex_and_view_1(
             tex,
@@ -415,6 +438,11 @@ MyID3D10Device::MyID3D10Device(
 ) :
     IUNKNOWN_INIT(*inner)
 {
+    if (!xorshift128p_state_init_status) {
+        void *key = this;
+        MurmurHash3_x86_128(&key, sizeof(void *), (uint32_t)*inner, xorshift128p_state);
+        xorshift128p_state_init_status = true;
+    }
     LOG_MFUN();
     resize_buffers(width, height);
     *inner = this;
@@ -433,13 +461,18 @@ void STDMETHODCALLTYPE MyID3D10Device::VSSetConstantBuffers(
     UINT NumBuffers,
     ID3D10Buffer *const *ppConstantBuffers
 ) {
-    LOG_MFUN();
+    auto constant_buffers = (const MyID3D10Buffer *const *)ppConstantBuffers;
+    LOG_MFUN(_,
+        LOG_ARG(StartSlot),
+        LOG_ARG(NumBuffers),
+        LOG_ARG_TYPE(constant_buffers, ArrayLoggerDeref, NumBuffers)
+    );
     ID3D10Buffer *buffers[NumBuffers];
     for (UINT i = 0; i < NumBuffers; ++i) {
         buffers[i] = ppConstantBuffers[i] ? ((MyID3D10Buffer *)ppConstantBuffers[i])->inner : NULL;
     }
     if (NumBuffers) {
-        memcpy(current_vscbs + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
+        memcpy(cached_vscbs + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
     }
     inner->VSSetConstantBuffers(
         StartSlot,
@@ -453,19 +486,33 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetShaderResources(
     UINT NumViews,
     ID3D10ShaderResourceView *const *ppShaderResourceViews
 ) {
+    int srv_type = 0;
+    cached_pssrv = NumViews && ppShaderResourceViews ? (MyID3D10ShaderResourceView *)*ppShaderResourceViews : NULL;
+    if (cached_pssrv && cached_pssrv->desc.ViewDimension == D3D_SRV_DIMENSION_TEXTURE2D) {
+        auto tex = (MyID3D10Texture2D *)cached_pssrv->resource;
+        if (tex->orig_width == cached_size.sc_width && tex->orig_height == cached_size.sc_height)
+            srv_type = 1;
+        else if (tex->orig_width == cached_size.render_3d_width && tex->orig_height == cached_size.render_3d_height)
+            srv_type = -1;
+    }
+    auto shader_resource_views = (const MyID3D10ShaderResourceView *const *)ppShaderResourceViews;
     LOG_MFUN(_,
         LOG_ARG(StartSlot),
         LOG_ARG(NumViews),
-        LOG_ARG_TYPE(ppShaderResourceViews, ArrayLoggerDeref, NumViews)
+        LOG_ARG_TYPE(shader_resource_views, ArrayLoggerDeref, NumViews),
+        LOG_ARG(srv_type)
     );
-    if (NumViews) current_pssrv = ppShaderResourceViews ? (MyID3D10ShaderResourceView *)*ppShaderResourceViews : NULL;
     ID3D10ShaderResourceView *srvs[NumViews];
     for (UINT i = 0; i < NumViews; ++i) {
-        MyID3D10ShaderResourceView *my_srv = (MyID3D10ShaderResourceView *)ppShaderResourceViews[i];
+        auto my_srv = (MyID3D10ShaderResourceView *)ppShaderResourceViews[i];
         srvs[i] = my_srv ? my_srv->inner : NULL;
     }
     if (NumViews) {
-        memcpy(current_pssrvs + StartSlot, srvs, sizeof(srvs[0]) * NumViews);
+        memcpy(render_pssrvs + StartSlot, srvs, sizeof(srvs[0]) * NumViews);
+        memcpy(cached_pssrvs + StartSlot, ppShaderResourceViews, sizeof(ppShaderResourceViews[0]) * NumViews);
+    } else {
+        memset(render_pssrvs, 0, sizeof(srvs[0]) * MAX_SHADER_RESOURCES);
+        memset(cached_pssrvs, 0, sizeof(ppShaderResourceViews[0]) * MAX_SHADER_RESOURCES);
     }
     inner->PSSetShaderResources(
         StartSlot,
@@ -480,8 +527,8 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetShader(
     LOG_MFUN(_,
         LOG_ARG(pPixelShader)
     );
-    current_ps = (MyID3D10PixelShader *)pPixelShader;
-    inner->PSSetShader(current_ps->inner);
+    cached_ps = (MyID3D10PixelShader *)pPixelShader;
+    inner->PSSetShader(cached_ps ? cached_ps->inner : NULL);
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::PSSetSamplers(
@@ -494,13 +541,18 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetSamplers(
         LOG_ARG(NumSamplers),
         LOG_ARG_TYPE(ppSamplers, ArrayLoggerDeref, NumSamplers)
     );
-    if (NumSamplers) current_psss = ppSamplers ? (MyID3D10SamplerState *)*ppSamplers : NULL;
+    cached_psss = NumSamplers && ppSamplers ? (MyID3D10SamplerState *)*ppSamplers : NULL;
     ID3D10SamplerState *sss[NumSamplers];
     for (UINT i = 0; i < NumSamplers; ++i) {
-        sss[i] = ppSamplers[i] ? ((MyID3D10SamplerState *)ppSamplers[i])->inner : NULL;
+        auto sampler = (MyID3D10SamplerState *)ppSamplers[i];
+        sss[i] = sampler ? config.linear ? sampler->linear : sampler->inner : NULL;
     }
     if (NumSamplers) {
-        memcpy(current_pssss + StartSlot, sss, sizeof(sss[0]) * NumSamplers);
+        memcpy(render_pssss + StartSlot, sss, sizeof(sss[0]) * NumSamplers);
+        memcpy(cached_pssss + StartSlot, ppSamplers, sizeof(ppSamplers[0]) * NumSamplers);
+    } else {
+        memset(render_pssss, 0, sizeof(sss[0]) * MAX_SAMPLERS);
+        memset(cached_pssss, 0, sizeof(ppSamplers[0]) * MAX_SAMPLERS);
     }
     inner->PSSetSamplers(
         StartSlot,
@@ -515,7 +567,7 @@ void STDMETHODCALLTYPE MyID3D10Device::VSSetShader(
     LOG_MFUN(_,
         LOG_ARG(pVertexShader)
     );
-    current_vs = pVertexShader;
+    cached_vs = pVertexShader;
     inner->VSSetShader(pVertexShader);
 }
 
@@ -524,13 +576,52 @@ void STDMETHODCALLTYPE MyID3D10Device::DrawIndexed(
     UINT StartIndexLocation,
     INT BaseVertexLocation
 ) {
-    LOG_MFUN();
+    bool linear_restore = false;
+    if (config.linear) {
+        MyID3D10SamplerState *ss0 = cached_pssss[0];
+        MyID3D10SamplerState *ss1 = cached_pssss[1];
+        MyID3D10ShaderResourceView *srv0 = cached_pssrvs[0];
+        MyID3D10ShaderResourceView *srv1 = cached_pssrvs[1];
+        bool alpha_discard = cached_ps && cached_ps->alpha_discard;
+        if (
+            ss0 && ss1 && srv0 && srv1 && alpha_discard &&
+            srv0->desc.ViewDimension == D3D10_SRV_DIMENSION_TEXTURE2D &&
+            srv1->desc.ViewDimension == D3D10_SRV_DIMENSION_TEXTURE2D
+        ) {
+            D3D10_TEXTURE2D_DESC *desc0 = &((MyID3D10Texture2D *)srv0->resource)->desc;
+            D3D10_TEXTURE2D_DESC *desc1 = &((MyID3D10Texture2D *)srv1->resource)->desc;
+            if (
+                (desc0->Width <= 16 && desc0->Height <= 16) ||
+                (desc1->Width <= 16 && desc1->Height <= 16)
+            ) {
+                ID3D10SamplerState *sss[2] = {ss0->inner, ss1->inner};
+                inner->PSSetSamplers(0, 2, sss);
+                linear_restore = true;
+            }
+            LOG_MFUN(_,
+                LOG_ARG(alpha_discard),
+                LOG_ARG(desc0->Width),
+                LOG_ARG(desc0->Height),
+                LOG_ARG(desc1->Width),
+                LOG_ARG(desc1->Height)
+            );
+        } else {
+            LOG_MFUN(_,
+                LOG_ARG(alpha_discard)
+            );
+        }
+    } else {
+        LOG_MFUN();
+    }
     set_render_vp();
     inner->DrawIndexed(
         IndexCount,
         StartIndexLocation,
         BaseVertexLocation
     );
+    if (config.linear && linear_restore) {
+        inner->PSSetSamplers(0, 2, render_pssss);
+    }
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::Draw(
@@ -549,9 +640,10 @@ if constexpr (ENABLE_SLANG_SHADER) {
     filter_ss = d3d10 && d3d10->shader_preset;
     filter_ss_3d = d3d10_3d && d3d10_3d->shader_preset;
 }
-    bool x8 = filter_ss_3d || render_3d_width != current_size.render_3d_width || render_3d_height != current_size.render_3d_height;
+    bool x8 = filter_ss_3d || (render_3d && (render_3d_width != render_size.render_3d_width || render_3d_height != render_size.render_3d_height));
     if (
         !config.interp &&
+        !config.linear &&
         !filter_ss &&
         !filter_ss_3d &&
         !x8
@@ -559,7 +651,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
 
     if (VertexCount != 4) goto end;
 {
-    MyID3D10SamplerState *psss = current_psss;
+    MyID3D10SamplerState *psss = cached_psss;
     if (!psss) goto end;
     filter_next = filter && psss == filter_state.psss;
 
@@ -573,13 +665,13 @@ if constexpr (ENABLE_SLANG_SHADER) {
         sampler_desc.ComparisonFunc != D3D10_COMPARISON_NEVER
     ) goto end;
 
-    MyID3D10ShaderResourceView *srv = current_pssrv;
+    MyID3D10ShaderResourceView *srv = cached_pssrv;
     if (!srv) goto end;
 
     D3D10_SHADER_RESOURCE_VIEW_DESC &srv_desc = srv->desc;
     if (srv_desc.ViewDimension != D3D10_SRV_DIMENSION_TEXTURE2D) goto end;
 
-    MyID3D10Texture2D *srv_tex = (MyID3D10Texture2D *)srv->resource;
+    auto srv_tex = (MyID3D10Texture2D *)srv->resource;
 
     filter_next = filter_next && srv_tex == filter_state.rtv_tex;
     bool x4 = false;
@@ -599,57 +691,57 @@ if constexpr (ENABLE_SLANG_SHADER) {
         x4 = true;
     } else if (
         x8 &&
-        srv_tex->orig_width == orig_size.render_3d_width &&
-        srv_tex->orig_height == orig_size.render_3d_height
+        srv_tex->orig_width == cached_size.render_3d_width &&
+        srv_tex->orig_height == cached_size.render_3d_height
     ) { // PlayStation 2
     } else {
         goto end;
     }
 
-    MyID3D10RenderTargetView *rtv = current_rtv;
+    MyID3D10RenderTargetView *rtv = cached_rtv;
     if (!rtv) goto end;
 
     D3D10_RENDER_TARGET_VIEW_DESC &rtv_desc = rtv->desc;
     if (rtv_desc.ViewDimension != D3D10_RTV_DIMENSION_TEXTURE2D) goto end;
 
-    MyID3D10Texture2D *rtv_tex = (MyID3D10Texture2D *)rtv->resource;
+    auto rtv_tex = (MyID3D10Texture2D *)rtv->resource;
 
     D3D10_TEXTURE2D_DESC &rtv_tex_desc = rtv_tex->desc;
 
     if (filter_next || x8) {
         if (
-            rtv_tex->orig_width != orig_size.sc_width ||
-            rtv_tex->orig_height != orig_size.sc_height
+            rtv_tex->orig_width != cached_size.sc_width ||
+            rtv_tex->orig_height != cached_size.sc_height
         ) goto end;
 
         auto set_filter_state_ps = [&] {
             inner->PSSetShader(filter_state.ps->inner);
         };
         auto restore_ps = [&] {
-            inner->PSSetShader(current_ps->inner);
+            inner->PSSetShader(cached_ps->inner);
         };
         auto restore_vps = [&] {
-            inner->RSSetViewports(1, &current_vp);
+            inner->RSSetViewports(1, &render_vp);
         };
         auto restore_pscbs = [&] {
-            inner->PSSetConstantBuffers(0, 1, current_pscbs);
+            inner->PSSetConstantBuffers(0, 1, cached_pscbs);
         };
         auto restore_rtvs = [&] {
             inner->OMSetRenderTargets(
                 1,
                 &rtv->inner,
-                current_dsv->inner
+                cached_dsv->inner
             );
         };
         auto restore_pssrvs = [&] {
             inner->PSSetShaderResources(
                 0,
                 MAX_SHADER_RESOURCES,
-                current_pssrvs
+                render_pssrvs
             );
         };
         auto restore_pssss = [&] {
-            inner->PSSetSamplers(0, MAX_SAMPLERS, current_pssss);
+            inner->PSSetSamplers(0, MAX_SAMPLERS, render_pssss);
         };
 
         auto set_viewport = [&](UINT width, UINT height) {
@@ -729,6 +821,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
             set_viewport(v->width, v->height);
             set_rtv(v->rtv);
             set_srv(filter_state.srv->inner);
+            if (config.linear) set_psss(filter_temp.sampler_nn);
             inner->Draw(VertexCount, filter_state.start_vertex_location);
             restore_vps();
             restore_rtvs();
@@ -738,59 +831,59 @@ if constexpr (ENABLE_SLANG_SHADER) {
             restore_pssrvs();
             restore_pssss();
         };
-        auto draw_ss = [&](d3d10_video_t *d3d10, MyID3D10ShaderResourceView *srv, D3D10_VIEWPORT *current_vp, TextureAndViews *current_tex = NULL) {
-            if (current_tex) {
+        auto draw_ss = [&](d3d10_video_t *d3d10, MyID3D10ShaderResourceView *srv, D3D10_VIEWPORT *render_vp, TextureAndViews *cached_tex = NULL) {
+            if (cached_tex) {
                 video_viewport_t vp = {
                     .x = 0,
                     .y = 0,
-                    .width = current_tex->width,
-                    .height = current_tex->height,
-                    .full_width = current_tex->width,
-                    .full_height = current_tex->height
+                    .width = cached_tex->width,
+                    .height = cached_tex->height,
+                    .full_width = cached_tex->width,
+                    .full_height = cached_tex->height
                 };
-                my_d3d10_update_viewport(d3d10, current_tex->rtv, &vp);
+                my_d3d10_update_viewport(d3d10, cached_tex->rtv, &vp);
             } else {
                 video_viewport_t vp = {
-                    .x = current_vp->TopLeftX,
-                    .y = current_vp->TopLeftY,
-                    .width = current_vp->Width,
-                    .height = current_vp->Height,
-                    .full_width = current_size.sc_width,
-                    .full_height = current_size.sc_height
+                    .x = render_vp->TopLeftX,
+                    .y = render_vp->TopLeftY,
+                    .width = render_vp->Width,
+                    .height = render_vp->Height,
+                    .full_width = render_size.sc_width,
+                    .full_height = render_size.sc_height
                 };
                 my_d3d10_update_viewport(d3d10, rtv->inner, &vp);
             }
-            MyID3D10Texture2D *my_texture = (MyID3D10Texture2D *)srv->resource;
+            auto my_texture = (MyID3D10Texture2D *)srv->resource;
             d3d10_texture_t texture = {};
             texture.handle = my_texture->inner;
             texture.desc = my_texture->desc;
             my_d3d10_gfx_frame(d3d10, &texture, frame_count);
 
-            inner->IASetPrimitiveTopology(current_pt);
+            inner->IASetPrimitiveTopology(cached_pt);
             inner->IASetVertexBuffers(
                 0,
                 D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT,
-                current_vbs.ppVertexBuffers,
-                current_vbs.pStrides,
-                current_vbs.pOffsets
+                cached_vbs.ppVertexBuffers,
+                cached_vbs.pStrides,
+                cached_vbs.pOffsets
             );
             inner->OMSetBlendState(
-                current_bs.pBlendState,
-                current_bs.BlendFactor,
-                current_bs.SampleMask
+                cached_bs.pBlendState,
+                cached_bs.BlendFactor,
+                cached_bs.SampleMask
             );
-            inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_pscbs);
-            inner->VSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, current_vscbs);
-            inner->IASetInputLayout(current_il);
+            inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, cached_pscbs);
+            inner->VSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, cached_vscbs);
+            inner->IASetInputLayout(cached_il);
             restore_ps();
-            inner->VSSetShader(current_vs);
-            inner->GSSetShader(current_gs);
+            inner->VSSetShader(cached_vs);
+            inner->GSSetShader(cached_gs);
             restore_vps();
             restore_rtvs();
 
-            if (current_tex) {
+            if (cached_tex) {
                 set_psss(filter_temp.sampler_linear);
-                set_srv(current_tex->srv);
+                set_srv(cached_tex->srv);
                 inner->Draw(VertexCount, StartVertexLocation);
             }
 
@@ -801,10 +894,10 @@ if constexpr (ENABLE_SLANG_SHADER) {
         if (x8) {
             if (filter_ss_3d) {
                 D3D10_VIEWPORT vp = {
-                    .TopLeftX = (INT)(current_size.sc_width - current_size.render_3d_width) / 2,
+                    .TopLeftX = (INT)(render_size.sc_width - render_size.render_3d_width) / 2,
                     .TopLeftY = 0,
-                    .Width = current_size.render_3d_width,
-                    .Height = current_size.render_3d_height
+                    .Width = render_size.render_3d_width,
+                    .Height = render_size.render_3d_height
                 };
                 draw_ss(d3d10_3d, srv, &vp);
             } else {
@@ -816,7 +909,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
             goto end;
         } else if (filter_state.t1) {
             if (filter_ss) {
-                draw_ss(d3d10, filter_state.srv, &current_vp, config.interp ? filter_state.x4 ? filter_temp.tex_nn_x4 : filter_temp.tex_nn_x1 : NULL);
+                draw_ss(d3d10, filter_state.srv, &render_vp, config.interp ? filter_state.x4 ? filter_temp.tex_nn_x4 : filter_temp.tex_nn_x1 : NULL);
             } else if (config.enhanced) {
                 if (filter_state.x4) {
                     draw_enhanced(filter_temp.tex_1_x4);
@@ -845,12 +938,12 @@ if constexpr (ENABLE_SLANG_SHADER) {
         clear_filter();
         filter = true;
         filter_state.rtv_tex = rtv_tex; rtv_tex->AddRef();
-        if (current_ps) {
-            filter_state.ps = current_ps; current_ps->AddRef();
-            switch (current_ps->bytecode_hash) {
+        if (cached_ps) {
+            filter_state.ps = cached_ps; cached_ps->AddRef();
+            switch (cached_ps->bytecode_hash) {
                 case 0xa54c4b2: filter_state.t1 = true; break;
                 case 0x1f4c05ac: filter_state.t1 = false; break;
-                default: filter_state.t1 = current_ps->bytecode_length >= BYTECODE_LENGTH_THRESHOLD; break;
+                default: filter_state.t1 = cached_ps->bytecode_length >= BYTECODE_LENGTH_THRESHOLD; break;
             }
         }
         if (filter_ss || !filter_state.t1) {
@@ -872,17 +965,18 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetConstantBuffers(
     UINT NumBuffers,
     ID3D10Buffer *const *ppConstantBuffers
 ) {
+    auto constant_buffers = (const MyID3D10Buffer *const *)ppConstantBuffers;
     LOG_MFUN(_,
         LOG_ARG(StartSlot),
         LOG_ARG(NumBuffers),
-        LOG_ARG_TYPE(ppConstantBuffers, ArrayLoggerDeref, NumBuffers)
+        LOG_ARG_TYPE(constant_buffers, ArrayLoggerDeref, NumBuffers)
     );
     ID3D10Buffer *buffers[NumBuffers];
     for (UINT i = 0; i < NumBuffers; ++i) {
         buffers[i] = ppConstantBuffers[i] ? ((MyID3D10Buffer *)ppConstantBuffers[i])->inner : NULL;
     }
     if (NumBuffers) {
-        memcpy(current_pscbs + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
+        memcpy(cached_pscbs + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
     }
     inner->PSSetConstantBuffers(
         StartSlot,
@@ -897,7 +991,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetInputLayout(
     LOG_MFUN(_,
         LOG_ARG(pInputLayout)
     );
-    current_il = pInputLayout;
+    cached_il = pInputLayout;
     inner->IASetInputLayout(pInputLayout);
 }
 
@@ -908,10 +1002,11 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetVertexBuffers(
     const UINT *pStrides,
     const UINT *pOffsets
 ) {
+    auto vertex_buffers = (const MyID3D10Buffer *const *)ppVertexBuffers;
     LOG_MFUN(_,
         LOG_ARG(StartSlot),
         LOG_ARG(NumBuffers),
-        LOG_ARG_TYPE(ppVertexBuffers, ArrayLoggerDeref, NumBuffers),
+        LOG_ARG_TYPE(vertex_buffers, ArrayLoggerDeref, NumBuffers),
         LOG_ARG_TYPE(pStrides, ArrayLoggerDeref, NumBuffers),
         LOG_ARG_TYPE(pOffsets, ArrayLoggerDeref, NumBuffers)
     );
@@ -921,9 +1016,9 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetVertexBuffers(
     }
 if constexpr (ENABLE_SLANG_SHADER) {
     if (NumBuffers) {
-        memcpy(current_vbs.ppVertexBuffers + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
-        memcpy(current_vbs.pStrides + StartSlot, pStrides, sizeof(pStrides[0]) * NumBuffers);
-        memcpy(current_vbs.pOffsets + StartSlot, pOffsets, sizeof(pOffsets[0]) * NumBuffers);
+        memcpy(cached_vbs.ppVertexBuffers + StartSlot, buffers, sizeof(buffers[0]) * NumBuffers);
+        memcpy(cached_vbs.pStrides + StartSlot, pStrides, sizeof(pStrides[0]) * NumBuffers);
+        memcpy(cached_vbs.pOffsets + StartSlot, pOffsets, sizeof(pOffsets[0]) * NumBuffers);
     }
 }
     inner->IASetVertexBuffers(
@@ -941,7 +1036,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetIndexBuffer(
     UINT Offset
 ) {
     LOG_MFUN(_,
-        LOG_ARG(pIndexBuffer),
+        LOG_ARG_TYPE(pIndexBuffer, (const MyID3D10Buffer *)),
         LOG_ARG(Format),
         LOG_ARG(Offset)
     );
@@ -991,7 +1086,12 @@ void STDMETHODCALLTYPE MyID3D10Device::GSSetConstantBuffers(
     UINT NumBuffers,
     ID3D10Buffer *const *ppConstantBuffers
 ) {
-    LOG_MFUN();
+    auto constant_buffers = (const MyID3D10Buffer *const *)ppConstantBuffers;
+    LOG_MFUN(_,
+        LOG_ARG(StartSlot),
+        LOG_ARG(NumBuffers),
+        LOG_ARG_TYPE(constant_buffers, ArrayLoggerDeref, NumBuffers)
+    );
     ID3D10Buffer *buffers[NumBuffers];
     for (UINT i = 0; i < NumBuffers; ++i) {
         buffers[i] = ppConstantBuffers[i] ? ((MyID3D10Buffer *)ppConstantBuffers[i])->inner : NULL;
@@ -1009,7 +1109,7 @@ void STDMETHODCALLTYPE MyID3D10Device::GSSetShader(
     LOG_MFUN(_,
         LOG_ARG(pShader)
     );
-    current_gs = pShader;
+    cached_gs = pShader;
     inner->GSSetShader(pShader);
 }
 
@@ -1021,7 +1121,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetPrimitiveTopology(
     );
     inner->IASetPrimitiveTopology(Topology);
 if constexpr (ENABLE_SLANG_SHADER) {
-    current_pt = Topology;
+    cached_pt = Topology;
 }
 }
 
@@ -1030,14 +1130,15 @@ void STDMETHODCALLTYPE MyID3D10Device::VSSetShaderResources(
     UINT NumViews,
     ID3D10ShaderResourceView *const *ppShaderResourceViews
 ) {
+    auto shader_resource_views = (const MyID3D10ShaderResourceView *const *)ppShaderResourceViews;
     LOG_MFUN(_,
         LOG_ARG(StartSlot),
         LOG_ARG(NumViews),
-        LOG_ARG_TYPE(ppShaderResourceViews, ArrayLoggerDeref, NumViews)
+        LOG_ARG_TYPE(shader_resource_views, ArrayLoggerDeref, NumViews)
     );
     ID3D10ShaderResourceView *srvs[NumViews];
     for (UINT i = 0; i < NumViews; ++i) {
-        MyID3D10ShaderResourceView *my_srv = (MyID3D10ShaderResourceView *)ppShaderResourceViews[i];
+        auto my_srv = (MyID3D10ShaderResourceView *)ppShaderResourceViews[i];
         srvs[i] = my_srv ? my_srv->inner : NULL;
     }
     inner->VSSetShaderResources(
@@ -1080,14 +1181,15 @@ void STDMETHODCALLTYPE MyID3D10Device::GSSetShaderResources(
     UINT NumViews,
     ID3D10ShaderResourceView *const *ppShaderResourceViews
 ) {
+    auto shader_resource_views = (const MyID3D10ShaderResourceView *const *)ppShaderResourceViews;
     LOG_MFUN(_,
         LOG_ARG(StartSlot),
         LOG_ARG(NumViews),
-        LOG_ARG_TYPE(ppShaderResourceViews, ArrayLoggerDeref, NumViews)
+        LOG_ARG_TYPE(shader_resource_views, ArrayLoggerDeref, NumViews)
     );
     ID3D10ShaderResourceView *srvs[NumViews];
     for (UINT i = 0; i < NumViews; ++i) {
-        MyID3D10ShaderResourceView *my_srv = (MyID3D10ShaderResourceView *)ppShaderResourceViews[i];
+        auto my_srv = (MyID3D10ShaderResourceView *)ppShaderResourceViews[i];
         srvs[i] = my_srv ? my_srv->inner : NULL;
     }
     inner->GSSetShaderResources(
@@ -1114,143 +1216,170 @@ void STDMETHODCALLTYPE MyID3D10Device::GSSetSamplers(
     );
 }
 
-bool MyID3D10Device::get_render_tex_views(
+bool MyID3D10Device::set_render_tex_views_and_update(
     MyID3D10Texture2D *tex,
     UINT width,
     UINT height,
     UINT orig_width,
-    UINT orig_height
+    UINT orig_height,
+    bool need_vp
 ) {
-    bool ret = false;
 if constexpr (ENABLE_CUSTOM_RESOLUTION) {
+    if (
+        need_vp &&
+        need_render_vp &&
+        (
+            render_width != width ||
+            render_height != height ||
+            render_orig_width != orig_width ||
+            render_orig_height != orig_height
+        )
+    ) return false;
+    if (tex->orig_width != orig_width || tex->orig_height != orig_height) return false;
     D3D10_TEXTURE2D_DESC desc = tex->desc;
-    if (tex->orig_width == orig_width && tex->orig_height == orig_height) {
-        ret = true;
-        if (desc.Width != width || desc.Height != height) {
-            if (tex->sc) {
-                ret = false;
-            } else {
-                desc.Width = width;
-                desc.Height = height;
-                tex->inner->Release();
-                inner->CreateTexture2D(&desc, NULL, &tex->inner);
+    if (desc.Width != width || desc.Height != height) {
+        if (tex->sc) return false;
 
-                for (MyID3D10RenderTargetView *rtv : tex->rtvs) {
-                    current_rtvs_map.erase(rtv->inner);
-                    rtv->inner->Release();
-                    inner->CreateRenderTargetView(tex->inner, &rtv->desc, &rtv->inner);
-                    current_rtvs_map.emplace(rtv->inner, rtv);
-                }
-                for (MyID3D10ShaderResourceView *srv : tex->srvs) {
-                    current_srvs_map.erase(srv->inner);
-                    srv->inner->Release();
-                    inner->CreateShaderResourceView(tex->inner, &srv->desc, &srv->inner);
-                    current_srvs_map.emplace(srv->inner, srv);
-                }
-                for (MyID3D10DepthStencilView *dsv : tex->dsvs) {
-                    current_dsvs_map.erase(dsv->inner);
-                    dsv->inner->Release();
-                    inner->CreateDepthStencilView(tex->inner, &dsv->desc, &dsv->inner);
-                    current_dsvs_map.emplace(dsv->inner, dsv);
-                }
+        desc.Width = width;
+        desc.Height = height;
+        tex->inner->Release();
+        inner->CreateTexture2D(&desc, NULL, &tex->inner);
 
-                tex->desc = desc;
-            }
+        for (MyID3D10RenderTargetView *rtv : tex->rtvs) {
+            cached_rtvs_map.erase(rtv->inner);
+            rtv->inner->Release();
+            inner->CreateRenderTargetView(tex->inner, &rtv->desc, &rtv->inner);
+            cached_rtvs_map.emplace(rtv->inner, rtv);
+        }
+        for (MyID3D10ShaderResourceView *srv : tex->srvs) {
+            cached_srvs_map.erase(srv->inner);
+            srv->inner->Release();
+            inner->CreateShaderResourceView(tex->inner, &srv->desc, &srv->inner);
+            cached_srvs_map.emplace(srv->inner, srv);
+        }
+        for (MyID3D10DepthStencilView *dsv : tex->dsvs) {
+            cached_dsvs_map.erase(dsv->inner);
+            dsv->inner->Release();
+            inner->CreateDepthStencilView(tex->inner, &dsv->desc, &dsv->inner);
+            cached_dsvs_map.emplace(dsv->inner, dsv);
         }
 
-        if (ret && (width != orig_width || height != orig_height)) {
-            render_width = width;
-            render_height = height;
-            render_orig_width = orig_width;
-            render_orig_height = orig_height;
-            need_current_vp = true;
-        }
+        tex->desc = desc;
     }
+    if (width == orig_width && height == orig_height) return false;
+    if (need_vp && !need_render_vp) {
+        render_width = width;
+        render_height = height;
+        render_orig_width = orig_width;
+        render_orig_height = orig_height;
+        need_render_vp = true;
+    }
+    return true;
 }
-    return ret;
+    return false;
+}
+
+bool MyID3D10Device::set_render_tex_views_and_update(ID3D10Resource *r, bool need_vp) {
+    D3D10_RESOURCE_DIMENSION type;
+    if (r->GetType(&type), type != D3D10_RESOURCE_DIMENSION_TEXTURE2D) return false;
+    auto tex = (MyID3D10Texture2D *)r;
+    return
+        set_render_tex_views_and_update(
+            tex,
+            render_size.sc_width,
+            render_size.sc_height,
+            cached_size.sc_width,
+            cached_size.sc_height,
+            need_vp
+        ) ||
+        set_render_tex_views_and_update(
+            tex,
+            render_3d ? render_3d_width : render_size.render_3d_width,
+            render_3d ? render_3d_height : render_size.render_3d_height,
+            cached_size.render_3d_width,
+            cached_size.render_3d_height,
+            need_vp
+        );
 }
 
 void MyID3D10Device::set_render_vp() {
 if constexpr (ENABLE_CUSTOM_RESOLUTION) {
-    if (need_current_vp && !is_current_vp) {
-        if (current_vp.Width && current_vp.Height) {
-            D3D10_VIEWPORT vp = {
-                .TopLeftX = (INT)(current_vp.TopLeftX * render_width / render_orig_width),
-                .TopLeftY = (INT)(current_vp.TopLeftY * render_height / render_orig_height),
-                .Width = current_vp.Width * render_width / render_orig_width,
-                .Height = current_vp.Height * render_height / render_orig_height,
-                .MinDepth = current_vp.MinDepth,
-                .MaxDepth = current_vp.MaxDepth,
-            };
-            orig_vp = current_vp;
-            current_vp = vp;
-            inner->RSSetViewports(1, &current_vp);
+    if (need_render_vp) {
+        if (!is_render_vp) {
+            if (cached_vp.Width && cached_vp.Height) {
+                render_vp = D3D10_VIEWPORT {
+                    .TopLeftX = (INT)(cached_vp.TopLeftX * render_width / render_orig_width),
+                    .TopLeftY = (INT)(cached_vp.TopLeftY * render_height / render_orig_height),
+                    .Width = cached_vp.Width * render_width / render_orig_width,
+                    .Height = cached_vp.Height * render_height / render_orig_height,
+                    .MinDepth = cached_vp.MinDepth,
+                    .MaxDepth = cached_vp.MaxDepth,
+                };
+                inner->RSSetViewports(1, &render_vp);
+            }
+            is_render_vp = true;
         }
-        is_current_vp = true;
+
+        LOG_MFUN(_,
+            LOG_ARG_TYPE(cached_rtv, constptr_Logger),
+            LOG_ARG_TYPE(cached_dsv, constptr_Logger),
+            LOG_ARG_TYPE(cached_pssrv, constptr_Logger),
+            LOG_ARG_TYPE(&render_vp, constptr_Logger),
+            LOG_ARG(render_width),
+            LOG_ARG(render_height),
+            LOG_ARG(render_orig_width),
+            LOG_ARG(render_orig_height)
+        );
     }
 }
 }
 
 void MyID3D10Device::reset_render_vp() {
 if constexpr (ENABLE_CUSTOM_RESOLUTION) {
-    if (need_current_vp && is_current_vp) {
-        if (current_vp.Width && current_vp.Height) {
-            current_vp = orig_vp;
-            orig_vp = {};
-            inner->RSSetViewports(1, &current_vp);
+    if (need_render_vp && is_render_vp) {
+        if (cached_vp.Width && cached_vp.Height) {
+            render_vp = cached_vp;
+            inner->RSSetViewports(1, &render_vp);
         }
-        is_current_vp = false;
+        is_render_vp = false;
     }
 }
 }
-
-#define GET_RENDER_TEX_VIEWS(v) do { \
-    MyID3D10Texture2D *tex = (MyID3D10Texture2D *)v->resource; \
-    get_render_tex_views( \
-        tex, \
-        current_size.sc_width, \
-        current_size.sc_height, \
-        orig_size.sc_width, \
-        orig_size.sc_height \
-    ) || \
-    get_render_tex_views( \
-        tex, \
-        render_3d_width, \
-        render_3d_height, \
-        orig_size.render_3d_width, \
-        orig_size.render_3d_height \
-    ); \
-} while (0)
 
 void STDMETHODCALLTYPE MyID3D10Device::OMSetRenderTargets(
     UINT NumViews,
     ID3D10RenderTargetView *const *ppRenderTargetViews,
     ID3D10DepthStencilView *pDepthStencilView
 ) {
+    auto render_target_view = (const MyID3D10RenderTargetView *const *)ppRenderTargetViews;
     LOG_MFUN(_,
         LOG_ARG(NumViews),
-        LOG_ARG_TYPE(ppRenderTargetViews, ArrayLoggerDeref, NumViews),
-        LOG_ARG(pDepthStencilView)
+        LOG_ARG_TYPE(render_target_view, ArrayLoggerDeref, NumViews),
+        LOG_ARG_TYPE(pDepthStencilView, (const MyID3D10DepthStencilView *))
     );
     reset_render_vp();
-    need_current_vp = false;
-    current_rtv = NumViews && ppRenderTargetViews ? (MyID3D10RenderTargetView *)*ppRenderTargetViews : NULL;
-    current_dsv = (MyID3D10DepthStencilView *)pDepthStencilView;
+    render_width = 0;
+    render_height = 0;
+    render_orig_width = 0;
+    render_orig_height = 0;
+    need_render_vp = false;
+    cached_rtv = NumViews && ppRenderTargetViews ? (MyID3D10RenderTargetView *)*ppRenderTargetViews : NULL;
+    cached_dsv = (MyID3D10DepthStencilView *)pDepthStencilView;
     ID3D10RenderTargetView *rtvs[NumViews];
     for (UINT i = 0; i < NumViews; ++i) {
-        MyID3D10RenderTargetView *my_rtv = (MyID3D10RenderTargetView *)ppRenderTargetViews[i];
+        auto my_rtv = (MyID3D10RenderTargetView *)ppRenderTargetViews[i];
         if (my_rtv && my_rtv->desc.ViewDimension == D3D10_RTV_DIMENSION_TEXTURE2D) {
-            GET_RENDER_TEX_VIEWS(my_rtv);
+            set_render_tex_views_and_update(my_rtv->resource, true);
         }
         rtvs[i] = my_rtv ? my_rtv->inner : NULL;
     }
-    if (current_dsv && current_dsv->desc.ViewDimension == D3D10_DSV_DIMENSION_TEXTURE2D) {
-        GET_RENDER_TEX_VIEWS(current_dsv);
+    if (cached_dsv && cached_dsv->desc.ViewDimension == D3D10_DSV_DIMENSION_TEXTURE2D) {
+        set_render_tex_views_and_update(cached_dsv->resource);
     }
     inner->OMSetRenderTargets(
         NumViews,
         NumViews ? rtvs : ppRenderTargetViews,
-        current_dsv ? current_dsv->inner : NULL
+        cached_dsv ? cached_dsv->inner : NULL
     );
 }
 
@@ -1266,12 +1395,12 @@ void STDMETHODCALLTYPE MyID3D10Device::OMSetBlendState(
         SampleMask
     );
 if constexpr (ENABLE_SLANG_SHADER) {
-    current_bs.pBlendState = pBlendState;
-    current_bs.BlendFactor[0] = BlendFactor[0];
-    current_bs.BlendFactor[1] = BlendFactor[1];
-    current_bs.BlendFactor[2] = BlendFactor[2];
-    current_bs.BlendFactor[3] = BlendFactor[3];
-    current_bs.SampleMask = SampleMask;
+    cached_bs.pBlendState = pBlendState;
+    cached_bs.BlendFactor[0] = BlendFactor[0];
+    cached_bs.BlendFactor[1] = BlendFactor[1];
+    cached_bs.BlendFactor[2] = BlendFactor[2];
+    cached_bs.BlendFactor[3] = BlendFactor[3];
+    cached_bs.SampleMask = SampleMask;
 }
 }
 
@@ -1329,12 +1458,12 @@ void STDMETHODCALLTYPE MyID3D10Device::RSSetViewports(
         LOG_ARG_TYPE(pViewports, ArrayLoggerRef, NumViewports)
     );
     if (NumViewports) {
-        current_vp = *pViewports;
+        cached_vp = *pViewports;
     } else {
-        current_vp = {};
+        cached_vp = {};
     }
-    orig_vp = {};
-    is_current_vp = false;
+    render_vp = cached_vp;
+    is_render_vp = false;
     inner->RSSetViewports(
         NumViewports,
         pViewports
@@ -1363,12 +1492,12 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
     const D3D10_BOX *pSrcBox
 ) {
     LOG_MFUN(_,
-        LOG_ARG(pDstResource),
+        LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
         LOG_ARG(DstSubresource),
         LOG_ARG(DstX),
         LOG_ARG(DstY),
         LOG_ARG(DstZ),
-        LOG_ARG(pSrcResource),
+        LOG_ARG_TYPE(pSrcResource, MyID3D10Resource_Logger),
         LOG_ARG(SrcSubresource),
         LOG_ARG(pSrcBox)
     );
@@ -1377,6 +1506,7 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
     D3D10_RESOURCE_DIMENSION srcType;
     pSrcResource->GetType(&srcType);
     if (dstType != srcType) return;
+    auto box = pSrcBox ? *pSrcBox : D3D10_BOX{};
     switch (dstType) {
         case D3D10_RESOURCE_DIMENSION_BUFFER:
             pDstResource = ((MyID3D10Buffer *)pDstResource)->inner;
@@ -1389,9 +1519,23 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
             break;
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE2D:
-            pDstResource = ((MyID3D10Texture2D *)pDstResource)->inner;
-            pSrcResource = ((MyID3D10Texture2D *)pSrcResource)->inner;
+        {
+            auto tex_dst = (MyID3D10Texture2D *)pDstResource;
+            auto tex_src = (MyID3D10Texture2D *)pSrcResource;
+            if (set_render_tex_views_and_update(tex_dst)) {
+                DstX = DstX * tex_dst->desc.Width / tex_dst->orig_width;
+                DstY = DstY * tex_dst->desc.Height / tex_dst->orig_height;
+            }
+            if (set_render_tex_views_and_update(tex_src) && pSrcBox) {
+                box.left = pSrcBox->left * tex_src->desc.Width / tex_src->orig_width;
+                box.top = pSrcBox->top * tex_src->desc.Height / tex_src->orig_height;
+                box.right = pSrcBox->right * tex_src->desc.Width / tex_src->orig_width;
+                box.bottom = pSrcBox->bottom * tex_src->desc.Height / tex_src->orig_height;
+            }
+            pDstResource = tex_dst->inner;
+            pSrcResource = tex_src->inner;
             break;
+        }
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE3D:
             pDstResource = ((MyID3D10Texture3D *)pDstResource)->inner;
@@ -1409,7 +1553,7 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
         DstZ,
         pSrcResource,
         SrcSubresource,
-        pSrcBox
+        pSrcBox ? &box : NULL
     );
 }
 
@@ -1418,9 +1562,11 @@ void STDMETHODCALLTYPE MyID3D10Device::CopyResource(
     ID3D10Resource *pSrcResource
 ) {
     LOG_MFUN(_,
-        LOG_ARG(pDstResource),
-        LOG_ARG(pSrcResource)
+        LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
+        LOG_ARG_TYPE(pSrcResource, MyID3D10Resource_Logger)
     );
+    set_render_tex_views_and_update(pDstResource);
+    set_render_tex_views_and_update(pSrcResource);
     D3D10_RESOURCE_DIMENSION dstType;
     pDstResource->GetType(&dstType);
     D3D10_RESOURCE_DIMENSION srcType;
@@ -1464,34 +1610,77 @@ void STDMETHODCALLTYPE MyID3D10Device::UpdateSubresource(
     UINT SrcRowPitch,
     UINT SrcDepthPitch
 ) {
-    LOG_MFUN(_,
-        LOG_ARG(pDstResource),
-        LOG_ARG(DstSubresource)
-    );
+
     D3D10_RESOURCE_DIMENSION dstType;
     pDstResource->GetType(&dstType);
+    UINT ByteWidth = 0;
+    ID3D10Resource *resource_inner;
+    int tex_type = 0;
     switch (dstType) {
         case D3D10_RESOURCE_DIMENSION_BUFFER:
-            pDstResource = ((MyID3D10Buffer *)pDstResource)->inner;
+        {
+            auto buffer = (MyID3D10Buffer *)pDstResource;
+            if (buffer->desc.BindFlags == D3D10_BIND_CONSTANT_BUFFER)
+                ByteWidth = buffer->desc.ByteWidth;
+            resource_inner = buffer->inner;
             break;
+        }
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE1D:
-            pDstResource = ((MyID3D10Texture1D *)pDstResource)->inner;
+            resource_inner = ((MyID3D10Texture1D *)pDstResource)->inner;
             break;
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE2D:
-            pDstResource = ((MyID3D10Texture2D *)pDstResource)->inner;
+        {
+            auto tex = (MyID3D10Texture2D *)pDstResource;
+            resource_inner = tex->inner;
+            if (tex->orig_width == cached_size.sc_width && tex->orig_height == cached_size.sc_height)
+                tex_type = 1;
+            else if (tex->orig_width == cached_size.render_3d_width && tex->orig_height == cached_size.render_3d_height)
+                tex_type = -1;
             break;
+        }
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE3D:
-            pDstResource = ((MyID3D10Texture3D *)pDstResource)->inner;
+            resource_inner = ((MyID3D10Texture3D *)pDstResource)->inner;
             break;
 
         default:
+            resource_inner = NULL;
             break;
     }
+    if (ByteWidth) {
+        if (tex_type) {
+            LOG_MFUN(_,
+                LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
+                LOG_ARG(tex_type),
+                LOG_ARG(DstSubresource),
+                LOG_ARG(pDstBox),
+                LOG_ARG_TYPE(pSrcData, ByteArrayLogger, ByteWidth),
+                LOG_ARG(SrcRowPitch),
+                LOG_ARG(SrcDepthPitch)
+            );
+        } else {
+            LOG_MFUN(_,
+                LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
+                LOG_ARG(DstSubresource),
+                LOG_ARG(pDstBox),
+                LOG_ARG_TYPE(pSrcData, ByteArrayLogger, ByteWidth),
+                LOG_ARG(SrcRowPitch),
+                LOG_ARG(SrcDepthPitch)
+            );
+        }
+    } else {
+        LOG_MFUN(_,
+            LOG_ARG(pDstResource),
+            LOG_ARG(DstSubresource),
+            LOG_ARG(pDstBox),
+            LOG_ARG(SrcRowPitch),
+            LOG_ARG(SrcDepthPitch)
+        );
+    }
     inner->UpdateSubresource(
-        pDstResource,
+        resource_inner,
         DstSubresource,
         pDstBox,
         pSrcData,
@@ -1505,7 +1694,8 @@ void STDMETHODCALLTYPE MyID3D10Device::ClearRenderTargetView(
     const FLOAT ColorRGBA[4]
 ) {
     LOG_MFUN(_,
-        LOG_ARG(pRenderTargetView)
+        LOG_ARG_TYPE(pRenderTargetView, (const MyID3D10RenderTargetView *)),
+        LOG_ARG_TYPE(ColorRGBA, ArrayLoggerRef, 4)
     );
     inner->ClearRenderTargetView(
         ((MyID3D10RenderTargetView *)pRenderTargetView)->inner,
@@ -1520,7 +1710,7 @@ void STDMETHODCALLTYPE MyID3D10Device::ClearDepthStencilView(
     UINT8 Stencil
 ) {
     if (LOG_MFUN_BEGIN(_,
-        LOG_ARG(pDepthStencilView),
+        LOG_ARG_TYPE(pDepthStencilView, (const MyID3D10DepthStencilView *)),
         LOG_ARG_TYPE(ClearFlags, D3D10_CLEAR_Logger)
     )) {
         if (ClearFlags & D3D10_CLEAR_DEPTH) {
@@ -1556,9 +1746,9 @@ void STDMETHODCALLTYPE MyID3D10Device::ResolveSubresource(
     DXGI_FORMAT Format
 ) {
     LOG_MFUN(_,
-        LOG_ARG(pDstResource),
+        LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
         LOG_ARG(DstSubresource),
-        LOG_ARG(pSrcResource),
+        LOG_ARG_TYPE(pSrcResource, MyID3D10Resource_Logger),
         LOG_ARG(SrcSubresource),
         LOG_ARG(Format)
     );
@@ -1627,7 +1817,7 @@ void STDMETHODCALLTYPE MyID3D10Device::VSGetConstantBuffers(
         ppConstantBuffers
     );
     for (UINT i = 0; i < NumBuffers; ++i) {
-        ppConstantBuffers[i] = ppConstantBuffers[i] ? current_bs_map.find(ppConstantBuffers[i])->second : NULL;
+        ppConstantBuffers[i] = ppConstantBuffers[i] ? cached_bs_map.find(ppConstantBuffers[i])->second : NULL;
     }
 }
 
@@ -1643,7 +1833,7 @@ void STDMETHODCALLTYPE MyID3D10Device::PSGetShaderResources(
         ppShaderResourceViews
     );
     for (UINT i = 0; i < NumViews; ++i) {
-        ppShaderResourceViews[i] = ppShaderResourceViews[i] ? current_srvs_map.find(ppShaderResourceViews[i])->second : NULL;
+        ppShaderResourceViews[i] = ppShaderResourceViews[i] ? cached_srvs_map.find(ppShaderResourceViews[i])->second : NULL;
     }
 }
 
@@ -1654,7 +1844,7 @@ void STDMETHODCALLTYPE MyID3D10Device::PSGetShader(
     inner->PSGetShader(
         ppPixelShader
     );
-    if (ppPixelShader) *ppPixelShader = *ppPixelShader ? current_pss_map.find(*ppPixelShader)->second : NULL;
+    if (ppPixelShader) *ppPixelShader = *ppPixelShader ? cached_pss_map.find(*ppPixelShader)->second : NULL;
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::PSGetSamplers(
@@ -1669,7 +1859,7 @@ void STDMETHODCALLTYPE MyID3D10Device::PSGetSamplers(
         ppSamplers
     );
     for (UINT i = 0; i < NumSamplers; ++i) {
-        ppSamplers[i] = ppSamplers[i] ? current_sss_map.find(ppSamplers[i])->second : NULL;
+        ppSamplers[i] = ppSamplers[i] ? cached_sss_map.find(ppSamplers[i])->second : NULL;
     }
 }
 
@@ -1694,7 +1884,7 @@ void STDMETHODCALLTYPE MyID3D10Device::PSGetConstantBuffers(
         ppConstantBuffers
     );
     for (UINT i = 0; i < NumBuffers; ++i) {
-        ppConstantBuffers[i] = ppConstantBuffers[i] ? current_bs_map.find(ppConstantBuffers[i])->second : NULL;
+        ppConstantBuffers[i] = ppConstantBuffers[i] ? cached_bs_map.find(ppConstantBuffers[i])->second : NULL;
     }
 }
 
@@ -1723,7 +1913,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IAGetVertexBuffers(
         pOffsets
     );
     for (UINT i = 0; i < NumBuffers; ++i) {
-        ppVertexBuffers[i] = ppVertexBuffers[i] ? current_bs_map.find(ppVertexBuffers[i])->second : NULL;
+        ppVertexBuffers[i] = ppVertexBuffers[i] ? cached_bs_map.find(ppVertexBuffers[i])->second : NULL;
     }
 }
 
@@ -1738,7 +1928,7 @@ void STDMETHODCALLTYPE MyID3D10Device::IAGetIndexBuffer(
         Format,
         Offset
     );
-    if (pIndexBuffer) *pIndexBuffer = *pIndexBuffer ? current_bs_map.find(*pIndexBuffer)->second : NULL;
+    if (pIndexBuffer) *pIndexBuffer = *pIndexBuffer ? cached_bs_map.find(*pIndexBuffer)->second : NULL;
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::GSGetConstantBuffers(
@@ -1753,7 +1943,7 @@ void STDMETHODCALLTYPE MyID3D10Device::GSGetConstantBuffers(
         ppConstantBuffers
     );
     for (UINT i = 0; i < NumBuffers; ++i) {
-        ppConstantBuffers[i] = ppConstantBuffers[i] ? current_bs_map.find(ppConstantBuffers[i])->second : NULL;
+        ppConstantBuffers[i] = ppConstantBuffers[i] ? cached_bs_map.find(ppConstantBuffers[i])->second : NULL;
     }
 }
 
@@ -1787,7 +1977,7 @@ void STDMETHODCALLTYPE MyID3D10Device::VSGetShaderResources(
         ppShaderResourceViews
     );
     for (UINT i = 0; i < NumViews; ++i) {
-        ppShaderResourceViews[i] = ppShaderResourceViews[i] ? current_srvs_map.find(ppShaderResourceViews[i])->second : NULL;
+        ppShaderResourceViews[i] = ppShaderResourceViews[i] ? cached_srvs_map.find(ppShaderResourceViews[i])->second : NULL;
     }
 }
 
@@ -1803,7 +1993,7 @@ void STDMETHODCALLTYPE MyID3D10Device::VSGetSamplers(
         ppSamplers
     );
     for (UINT i = 0; i < NumSamplers; ++i) {
-        ppSamplers[i] = ppSamplers[i] ? current_sss_map.find(ppSamplers[i])->second : NULL;
+        ppSamplers[i] = ppSamplers[i] ? cached_sss_map.find(ppSamplers[i])->second : NULL;
     }
 }
 
@@ -1830,7 +2020,7 @@ void STDMETHODCALLTYPE MyID3D10Device::GSGetShaderResources(
         ppShaderResourceViews
     );
     for (UINT i = 0; i < NumViews; ++i) {
-        ppShaderResourceViews[i] = ppShaderResourceViews[i] ? current_srvs_map.find(ppShaderResourceViews[i])->second : NULL;
+        ppShaderResourceViews[i] = ppShaderResourceViews[i] ? cached_srvs_map.find(ppShaderResourceViews[i])->second : NULL;
     }
 }
 
@@ -1846,7 +2036,7 @@ void STDMETHODCALLTYPE MyID3D10Device::GSGetSamplers(
         ppSamplers
     );
     for (UINT i = 0; i < NumSamplers; ++i) {
-        ppSamplers[i] = ppSamplers[i] ? current_sss_map.find(ppSamplers[i])->second : NULL;
+        ppSamplers[i] = ppSamplers[i] ? cached_sss_map.find(ppSamplers[i])->second : NULL;
     }
 }
 
@@ -1862,9 +2052,9 @@ void STDMETHODCALLTYPE MyID3D10Device::OMGetRenderTargets(
         ppDepthStencilView
     );
     for (UINT i = 0; i < NumViews; ++i) {
-        ppRenderTargetViews[i] = ppRenderTargetViews[i] ? current_rtvs_map.find(ppRenderTargetViews[i])->second : NULL;
+        ppRenderTargetViews[i] = ppRenderTargetViews[i] ? cached_rtvs_map.find(ppRenderTargetViews[i])->second : NULL;
     }
-    if (ppDepthStencilView) *ppDepthStencilView = *ppDepthStencilView ? current_dsvs_map.find(*ppDepthStencilView)->second : NULL;
+    if (ppDepthStencilView) *ppDepthStencilView = *ppDepthStencilView ? cached_dsvs_map.find(*ppDepthStencilView)->second : NULL;
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::OMGetBlendState(
@@ -1903,7 +2093,7 @@ void STDMETHODCALLTYPE MyID3D10Device::SOGetTargets(
         pOffsets
     );
     for (UINT i = 0; i < NumBuffers; ++i) {
-        ppSOTargets[i] = ppSOTargets[i] ? current_bs_map.find(ppSOTargets[i])->second : NULL;
+        ppSOTargets[i] = ppSOTargets[i] ? cached_bs_map.find(ppSOTargets[i])->second : NULL;
     }
 }
 
@@ -2023,12 +2213,21 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateBuffer(
         ppBuffer
     );
     if (ret == S_OK) {
-        LOG_MFUN(_,
-            LOG_ARG(pDesc),
-            LOG_ARG(*ppBuffer),
-            ret
-        );
-        new MyID3D10Buffer(ppBuffer, pDesc);
+        if (pDesc->BindFlags == D3D10_BIND_CONSTANT_BUFFER) {
+            LOG_MFUN(_,
+                LOG_ARG(pDesc),
+                LOG_ARG_TYPE(pInitialData, D3D10_SUBRESOURCE_DATA_Logger, pDesc->ByteWidth),
+                LOG_ARG(*ppBuffer),
+                ret
+            );
+        } else {
+            LOG_MFUN(_,
+                LOG_ARG(pDesc),
+                LOG_ARG(*ppBuffer),
+                ret
+            );
+        }
+        new MyID3D10Buffer(ppBuffer, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -2054,7 +2253,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateTexture1D(
             LOG_ARG(*ppTexture1D),
             ret
         );
-        new MyID3D10Texture1D(ppTexture1D, pDesc);
+        new MyID3D10Texture1D(ppTexture1D, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -2080,7 +2279,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateTexture2D(
             LOG_ARG(*ppTexture2D),
             ret
         );
-        new MyID3D10Texture2D(ppTexture2D, pDesc);
+        new MyID3D10Texture2D(ppTexture2D, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -2106,7 +2305,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateTexture3D(
             LOG_ARG(*ppTexture3D),
             ret
         );
-        new MyID3D10Texture3D(ppTexture3D, pDesc);
+        new MyID3D10Texture3D(ppTexture3D, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -2123,7 +2322,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateShaderResourceView(
 ) {
     D3D10_RESOURCE_DIMENSION type;
     pResource->GetType(&type);
-    ID3D10Resource *resource_inner;
+    ID3D10Resource *resource_inner = NULL;
     MyID3D10Texture2D *texture_2d = NULL;
     switch (type) {
         case D3D10_RESOURCE_DIMENSION_BUFFER:
@@ -2153,9 +2352,9 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateShaderResourceView(
     );
     if (ret == S_OK) {
         LOG_MFUN(_,
-            LOG_ARG(pResource),
+            LOG_ARG_TYPE(pResource, MyID3D10Resource_Logger),
             LOG_ARG(pDesc),
-            LOG_ARG(*ppSRView),
+            LOG_ARG_TYPE(*ppSRView, (const MyID3D10ShaderResourceView *)),
             ret
         );
         MyID3D10ShaderResourceView *srv = new MyID3D10ShaderResourceView(ppSRView, pDesc, pResource);
@@ -2164,7 +2363,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateShaderResourceView(
         }
     } else {
         LOG_MFUN(_,
-            LOG_ARG(pResource),
+            LOG_ARG_TYPE(pResource, MyID3D10Resource_Logger),
             LOG_ARG(pDesc),
             ret
         );
@@ -2179,7 +2378,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateRenderTargetView(
 ) {
     D3D10_RESOURCE_DIMENSION type;
     pResource->GetType(&type);
-    ID3D10Resource *resource_inner;
+    ID3D10Resource *resource_inner = NULL;
     MyID3D10Texture2D *texture_2d = NULL;
     switch (type) {
         case D3D10_RESOURCE_DIMENSION_BUFFER:
@@ -2209,9 +2408,9 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateRenderTargetView(
     );
     if (ret == S_OK) {
         LOG_MFUN(_,
-            LOG_ARG(pResource),
+            LOG_ARG_TYPE(pResource, MyID3D10Resource_Logger),
             LOG_ARG(pDesc),
-            LOG_ARG(*ppRTView),
+            LOG_ARG_TYPE(*ppRTView, (const MyID3D10RenderTargetView *)),
             ret
         );
         MyID3D10RenderTargetView *rtv = new MyID3D10RenderTargetView(ppRTView, pDesc, pResource);
@@ -2220,7 +2419,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateRenderTargetView(
         }
     } else {
         LOG_MFUN(_,
-            LOG_ARG(pResource),
+            LOG_ARG_TYPE(pResource, MyID3D10Resource_Logger),
             LOG_ARG(pDesc),
             ret
         );
@@ -2235,7 +2434,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateDepthStencilView(
 ) {
     D3D10_RESOURCE_DIMENSION type;
     pResource->GetType(&type);
-    ID3D10Resource *resource_inner;
+    ID3D10Resource *resource_inner = NULL;
     MyID3D10Texture2D *texture_2d = NULL;
     switch (type) {
         case D3D10_RESOURCE_DIMENSION_BUFFER:
@@ -2265,9 +2464,9 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateDepthStencilView(
     );
     if (ret == S_OK) {
         LOG_MFUN(_,
-            LOG_ARG(pResource),
+            LOG_ARG_TYPE(pResource, MyID3D10Resource_Logger),
             LOG_ARG(pDesc),
-            LOG_ARG(*ppDepthStencilView),
+            LOG_ARG_TYPE(*ppDepthStencilView, (const MyID3D10DepthStencilView *)),
             ret
         );
         MyID3D10DepthStencilView *dsv = new MyID3D10DepthStencilView(ppDepthStencilView, pDesc, pResource);
@@ -2276,7 +2475,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateDepthStencilView(
         }
     } else {
         LOG_MFUN(_,
-            LOG_ARG(pResource),
+            LOG_ARG_TYPE(pResource, MyID3D10Resource_Logger),
             LOG_ARG(pDesc),
             ret
         );
@@ -2325,14 +2524,14 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateVertexShader(
     );
     if (ret == S_OK) {
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger, BytecodeLength),
+            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger),
             LOG_ARG(BytecodeLength),
             LOG_ARG(*ppVertexShader),
             ret
         );
     } else {
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger, BytecodeLength),
+            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger),
             LOG_ARG(BytecodeLength),
             ret
         );
@@ -2352,14 +2551,14 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateGeometryShader(
     );
     if (ret == S_OK) {
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger, BytecodeLength),
+            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger),
             LOG_ARG(BytecodeLength),
             LOG_ARG(*ppGeometryShader),
             ret
         );
     } else {
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger, BytecodeLength),
+            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger),
             LOG_ARG(BytecodeLength),
             ret
         );
@@ -2397,11 +2596,12 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreatePixelShader(
         ppPixelShader
     );
     if (ret == S_OK) {
+        ShaderLogger shader_source{pShaderBytecode};
         DWORD hash;
         MurmurHash3_x86_32(pShaderBytecode, BytecodeLength, 0, &hash);
-        new MyID3D10PixelShader(ppPixelShader, hash, BytecodeLength);
+        new MyID3D10PixelShader(ppPixelShader, hash, BytecodeLength, shader_source.result.sourceCode);
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger, BytecodeLength),
+            LOG_ARG(shader_source),
             LOG_ARG_TYPE(hash, NumHexLogger),
             LOG_ARG(BytecodeLength),
             LOG_ARG(*ppPixelShader),
@@ -2409,7 +2609,6 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreatePixelShader(
         );
     } else {
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger, BytecodeLength),
             LOG_ARG(BytecodeLength),
             ret
         );
@@ -2421,11 +2620,21 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateBlendState(
     const D3D10_BLEND_DESC *pBlendStateDesc,
     ID3D10BlendState **ppBlendState
 ) {
-    LOG_MFUN();
-    return inner->CreateBlendState(
+    HRESULT ret = inner->CreateBlendState(
         pBlendStateDesc,
         ppBlendState
     );
+    if (ret == S_OK) {
+        LOG_MFUN(_,
+            LOG_ARG(pBlendStateDesc),
+            LOG_ARG(*ppBlendState)
+        );
+    } else {
+        LOG_MFUN(_,
+            LOG_ARG(pBlendStateDesc)
+        );
+    }
+    return ret;
 }
 
 HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateDepthStencilState(
@@ -2459,12 +2668,26 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateSamplerState(
         ppSamplerState
     );
     if (ret == S_OK) {
+        ID3D10SamplerState *linear;
+        if (pSamplerDesc->Filter == D3D10_FILTER_MIN_MAG_MIP_LINEAR) {
+            linear = *ppSamplerState;
+            linear->AddRef();
+        } else {
+            D3D10_SAMPLER_DESC desc = *pSamplerDesc;
+            desc.Filter = D3D10_FILTER_MIN_MAG_MIP_LINEAR;
+            if (S_OK != inner->CreateSamplerState(
+                &desc,
+                &linear
+            )) {
+                linear = NULL;
+            }
+        }
         LOG_MFUN(_,
             LOG_ARG(pSamplerDesc),
             LOG_ARG_TYPE(*ppSamplerState, NumHexLogger),
             ret
         );
-        new MyID3D10SamplerState(ppSamplerState, pSamplerDesc);
+        new MyID3D10SamplerState(ppSamplerState, pSamplerDesc, linear);
     } else {
         LOG_MFUN(_,
             LOG_ARG(pSamplerDesc),

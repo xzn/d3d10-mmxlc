@@ -51,8 +51,10 @@ else
 endif
 
 ifeq ($(o3),0)
-	o3_opt := -g
+	o3_opt := -ggdb -ggdb3 -Og -fno-inline -fno-early-inlining -fvar-tracking -gvariable-location-views -ginternal-reset-location-views -ginline-points -D_GLIBCXX_DEBUG
+	# o3_opt += -fno-merge-debug-strings -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 	lto := 0
+	dll_dbg := $(dll:%.dll=%.dbg)
 else
 	o3_opt := -O3 -DNDEBUG -s
 endif
@@ -72,7 +74,10 @@ retroarch_hdr_sen := obj/RetroArch/.retroarch_hdr_sen
 
 prep_src := $(glslang_ln) $(retroarch_ln) $(retroarch_hdr) $(retroarch_hdr_sen) $(retroarch_base_ln)
 prep: $(prep_src)
-dll: $(dll)
+dll: $(dll) $(dll_dbg)
+
+$(dll_dbg): $(dll)
+	$(cross_prefix)objcopy --only-keep-debug $< $@
 
 $(dll): $(obj_all) dinput8.def
 	$(cxx) $(color_opt) -o $@ $+ $(o3_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
@@ -143,6 +148,6 @@ clean:
 	-find obj/ -type f -name '*.o' -delete
 	-find obj/ -type f -name '*.d' -delete
 	-find obj/ -type d -empty -delete
-	-$(RM) *.dll $(prep_src)
+	-$(RM) *.dll *.dbg $(prep_src)
 
 -include $(dep_all)

@@ -19,14 +19,14 @@ MyID3D10RenderTargetView::MyID3D10RenderTargetView(
     LOG_MFUN(_,
         LOG_ARG(*inner)
     );
-    current_rtvs_map.emplace(*inner, this);
+    cached_rtvs_map.emplace(*inner, this);
     *inner = this;
     resource->AddRef();
 }
 
 MyID3D10RenderTargetView::~MyID3D10RenderTargetView() {
     LOG_MFUN();
-    current_rtvs_map.erase(inner);
+    cached_rtvs_map.erase(inner);
     if (desc.ViewDimension == D3D10_RTV_DIMENSION_TEXTURE2D) {
         MyID3D10Texture2D *texture_2d = (MyID3D10Texture2D *)resource;
         texture_2d->rtvs.erase(this);
@@ -43,4 +43,4 @@ void STDMETHODCALLTYPE MyID3D10RenderTargetView::GetDesc(
 
 ID3D10VIEW_IMPL(MyID3D10RenderTargetView)
 
-std::unordered_map<ID3D10RenderTargetView *, MyID3D10RenderTargetView *> current_rtvs_map;
+std::unordered_map<ID3D10RenderTargetView *, MyID3D10RenderTargetView *> cached_rtvs_map;

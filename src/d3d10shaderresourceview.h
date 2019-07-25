@@ -27,6 +27,6 @@ public:
     ID3D10VIEW_DECL
 };
 
-extern std::unordered_map<ID3D10ShaderResourceView *, MyID3D10ShaderResourceView *> current_srvs_map;
+extern std::unordered_map<ID3D10ShaderResourceView *, MyID3D10ShaderResourceView *> cached_srvs_map;
 
 #endif
