@@ -47,7 +47,7 @@ Copy `dinput8.dll`, `interp-mod.ini`, and the `slang-shaders\` directory to your
 
 ```ini
 ; Log API calls to interp-mod.log,
-; Should be left disabled. Really slow and for the most part isn't useful for debugging.
+; Should be left disabled. Really slow and for the most part isn't even useful for debugging.
 ; [logging]
 ; enabled=true
 ; hotkey_toggle=VK_CONTROL+O
@@ -55,20 +55,21 @@ Copy `dinput8.dll`, `interp-mod.ini`, and the `slang-shaders\` directory to your
 
 ; Change interpolation mode and set up custom shaders.
 [graphics]
-; Recommended, even if slang-shader is not used.
-; Get rid of nearest-neighbour upscaling artifact.
+; Recommended, even if slang-shader is not used; get rid of nearest-neighbour upscaling artifact.
 interp=true
-; Not recommended, very slow.
-; When using Type 1 filter, run the default 2x upscale shader multiple times until it covers the size of the screen.
+; Slightly reduces aliasing in X7 and X8
+; linear=true
+; Not recommended, very slow - when using Type 1 filter, run the default 2x upscale shader multiple times until it covers the size of the screen.
 ; enhanced=true
 ; Set up custom shader for X1~X6, and 3d shader for X7~X8. Need Type 1 filter to be set in-game.
-slang_shader=slang-shaders/xbr/xbr-lv2.slangp
-slang_shader_3d=slang-shaders/anti-aliasing/fxaa.slangp
-; Currently broken, couldn't figure out how to get this to work yet. Do not use.
-; render_3d_width=
-; render_3d_height=
-; display_width=
-; display_height=
+slang_shader=slang-shaders/xbrz/xbrz-freescale-multipass.slangp
+slang_shader_3d=slang-shaders/anti-aliasing/smaa.slangp
+; Custom render resolution for X7 and X8
+render_3d_width=
+render_3d_height=
+; Custom display resolution (can be higher or lower than the games allow)
+display_width=
+display_height=
 ```
 
 If all goes well you should now be able to start the game and see the overlay on top-left of the screen showing the status of the mod.
