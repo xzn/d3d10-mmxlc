@@ -2,6 +2,7 @@
 #define MAIN_H
 
 #define ENABLE_LOGGER 1
+// Filters currently do not apply to FMVs and certain menu items
 #define ENABLE_SLANG_SHADER 1
 // Custom display resolution seems to work now
 // Custom render resoluton separate from display still broken

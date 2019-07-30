@@ -24,11 +24,15 @@
 #define X1_WIDTH 256
 #define X1_HEIGHT 224
 #define X4_WIDTH 320
+#define X6_WIDTH 512
 #define X4_HEIGHT 240
+#define X6_HEIGHT X4_HEIGHT
 #define X1_WIDTH_FILTERED (X1_WIDTH * 2)
 #define X1_HEIGHT_FILTERED (X1_HEIGHT * 2)
 #define X4_WIDTH_FILTERED (X4_WIDTH * 2)
 #define X4_HEIGHT_FILTERED (X4_HEIGHT * 2)
+#define X6_WIDTH_FILTERED (X6_WIDTH * 2)
+#define X6_HEIGHT_FILTERED (X6_HEIGHT * 2)
 #define PS_BYTECODE_LENGTH_T1_THRESHOLD 1000
 #define PS_HASH_T1 0xa54c4b2
 #define PS_HASH_T2 0xc9b117d5
@@ -111,6 +115,7 @@ class MyID3D10Device::Impl {
         bool t1;
         MyID3D10SamplerState *psss;
         bool x4;
+        bool x6;
         UINT start_vertex_location;
         ID3D10Buffer *vertex_buffer;
         UINT vertex_stride;
@@ -572,10 +577,12 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
         ID3D10SamplerState *sampler_wrap;
         TextureAndViews *tex_nn_x1;
         TextureAndViews *tex_nn_x4;
+        TextureAndViews *tex_nn_x6;
         TextureAndDepthViews *tex_t2;
         TextureAndViews *tex_x8;
         std::vector<TextureViewsAndBuffer *> tex_1_x1;
         std::vector<TextureViewsAndBuffer *> tex_1_x4;
+        std::vector<TextureViewsAndBuffer *> tex_1_x6;
     } filter_temp = {};
 
     void filter_temp_init() {
@@ -605,6 +612,12 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             X4_WIDTH,
             X4_HEIGHT
         );
+        filter_temp.tex_nn_x6 = new TextureAndViews{};
+        create_tex_and_views_nn(
+            filter_temp.tex_nn_x6,
+            X6_WIDTH,
+            X6_HEIGHT
+        );
         filter_temp.tex_t2 = new TextureAndDepthViews{};
         create_tex_and_depth_views_2(
             NOISE_WIDTH,
@@ -620,6 +633,11 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             filter_temp.tex_1_x4,
             X4_WIDTH_FILTERED,
             X4_HEIGHT_FILTERED
+        );
+        create_tex_and_view_1_v(
+            filter_temp.tex_1_x6,
+            X6_WIDTH_FILTERED,
+            X6_HEIGHT_FILTERED
         );
         filter_temp_init_x8();
     }
@@ -660,6 +678,10 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             delete filter_temp.tex_nn_x4;
             filter_temp.tex_nn_x4 = NULL;
         }
+        if (filter_temp.tex_nn_x6) {
+            delete filter_temp.tex_nn_x6;
+            filter_temp.tex_nn_x6 = NULL;
+        }
         if (filter_temp.tex_t2) {
             delete filter_temp.tex_t2;
             filter_temp.tex_t2 = NULL;
@@ -676,6 +698,10 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             delete tex;
         }
         filter_temp.tex_1_x4.clear();
+        for (TextureAndViews *tex : filter_temp.tex_1_x6) {
+            delete tex;
+        }
+        filter_temp.tex_1_x6.clear();
     }
 
     struct LinearFilterConditions {
@@ -1043,21 +1069,29 @@ if constexpr (ENABLE_SLANG_SHADER) {
         filter_next &= srv_tex == filter_state.rtv_tex;
 
         bool x4 = false;
+        bool x6 = false;
         D3D10_TEXTURE2D_DESC &srv_tex_desc = srv_tex->get_desc();
         if (filter_next) {
             x8 = false;
         } else if (
             srv_tex_desc.Width == X1_WIDTH &&
             srv_tex_desc.Height == X1_HEIGHT
-        ) { // SNES
+        ) { // SNES X1~X3
             x8 = false;
             filter_ss |= filter_ss_snes;
         } else if (
             srv_tex_desc.Width == X4_WIDTH &&
             srv_tex_desc.Height == X4_HEIGHT
-        ) { // PlayStation
+        ) { // PlayStation X4~X5
             x8 = false;
             x4 = true;
+            filter_ss |= filter_ss_psone;
+        } else if (
+            srv_tex_desc.Width == X6_WIDTH &&
+            srv_tex_desc.Height == X6_HEIGHT
+        ) { // PlayStation X6
+            x8 = false;
+            x6 = true;
             filter_ss |= filter_ss_psone;
         } else if (
             x8 &&
@@ -1069,7 +1103,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
                 srv_tex->get_orig_height(),
                 cached_size.render_3d_height
             )
-        ) { // PlayStation 2
+        ) { // PlayStation 2 X7~X8
         } else {
             goto end;
         }
@@ -1280,14 +1314,18 @@ if constexpr (ENABLE_SLANG_SHADER) {
                         &render_vp,
                         render_interp ?
                             filter_state.x4 ?
-                                filter_temp.tex_nn_x4 :
+                                filter_state.x6 ?
+                                    filter_temp.tex_nn_x6 :
+                                    filter_temp.tex_nn_x4 :
                                 filter_temp.tex_nn_x1 :
                             NULL
                     );
                 } else if (render_enhanced) {
                     draw_enhanced(
                         filter_state.x4 ?
-                            filter_temp.tex_1_x4 :
+                            filter_state.x6?
+                                filter_temp.tex_1_x6 :
+                                filter_temp.tex_1_x4 :
                             filter_temp.tex_1_x1
                     );
                 } else {
@@ -1298,7 +1336,9 @@ if constexpr (ENABLE_SLANG_SHADER) {
             } else {
                 draw_nn(
                     filter_state.x4 ?
-                        filter_temp.tex_nn_x4 :
+                        filter_state.x6 ?
+                            filter_temp.tex_nn_x6 :
+                            filter_temp.tex_nn_x4 :
                         filter_temp.tex_nn_x1
                 );
             }
@@ -1325,7 +1365,8 @@ if constexpr (ENABLE_SLANG_SHADER) {
             if (cached_vs) cached_vs->AddRef();
             filter_state.psss = psss;
             if (psss) psss->AddRef();
-            filter_state.x4 = x4;
+            filter_state.x4 = x4 || x6;
+            filter_state.x6 = x6;
             filter_state.start_vertex_location =
                 StartVertexLocation;
             filter_state.vertex_buffer =
