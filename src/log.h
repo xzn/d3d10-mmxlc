@@ -3,11 +3,6 @@
 
 #include "main.h"
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreorder"
-#include "../HLSLcc/include/hlslcc.h"
-#pragma GCC diagnostic pop
-
 class MyID3D10Buffer;
 class MyID3D10Texture1D;
 class MyID3D10Texture2D;
@@ -15,11 +10,35 @@ class MyID3D10Texture3D;
 class MyID3D10ShaderResourceView;
 class MyID3D10RenderTargetView;
 class MyID3D10DepthStencilView;
+class Config;
+class Overlay;
+
+template<class T>
+struct LogItem;
+// Example:
+// struct LogItem<T> {
+//     const T* t;
+//     void log_item(Logger *logger) const;
+// };
+
+template<size_t N>
+struct LogSkip {
+    const bool skip;
+    operator bool() const { return skip; }
+    LogSkip<N - 1> operator*() const {
+        return {skip};
+    }
+};
+template<size_t N>
+struct LogIf : LogSkip<N> {
+    template<class T, std::enable_if_t<std::is_constructible_v<T, bool>, int> = 0>
+    explicit LogIf(T cond) : LogSkip<N>{!cond} {}
+};
 
 template<class T>
 struct DefaultLogger {
-    T a;
-    explicit DefaultLogger(T a) : a(a) {}
+    const T &a;
+    explicit DefaultLogger(const T &a) : a(a) {}
 };
 
 template<int L, class T>
@@ -33,7 +52,7 @@ NumLenLoggerBase<L, T> NumLenLogger(T a) {
 }
 
 template<class T>
-decltype(auto) constptr_Logger(T *a) {
+auto constptr_Logger(T *a) {
     return (const T*)a;
 }
 
@@ -53,35 +72,32 @@ struct HotkeyLogger {
     std::vector<BYTE> &a;
 };
 
-template<class TT, class T>
+template<auto TT, class T>
 struct ArrayLoggerBase {
     T *a;
     size_t n;
 };
+template<class T> T deref_ftor(T *a) { return *a; }
+template<class T> T *ref_ftor(T *a) { return a; }
+template<class T, class TT> T ctor_ftor(TT *a) { return T(*a); }
+template<class T, class TT> T ctor_ref_ftor(TT *a) { return T(a); }
 template<class T>
-struct Deref {
-    T operator()(T *a) const { return *a; }
-};
-template<class T>
-struct Ref {
-    T *operator()(T *a) const { return a; }
-};
-template<class T, class TT>
-struct Ctor {
-    T operator()(TT *a) const { return T(*a); }
-};
-template<class T>
-ArrayLoggerBase<Deref<T>, T> ArrayLoggerDeref(T *a, size_t n) {
+ArrayLoggerBase<deref_ftor<T>, T> ArrayLoggerDeref(T *a, size_t n) {
     return {a, n};
 }
 template<class T>
-ArrayLoggerBase<Ref<T>, T> ArrayLoggerRef(T *a, size_t n) {
+ArrayLoggerBase<ref_ftor<T>, T> ArrayLoggerRef(T *a, size_t n) {
     return {a, n};
 }
+
 template<class T, class TT>
-std::enable_if_t<std::is_constructible_v<T, TT>, ArrayLoggerBase<Ctor<T, TT>, TT>>
-ArrayLoggerCtor(TT *a, size_t n) {
+ArrayLoggerBase<ctor_ftor<T, TT>, TT> ArrayLoggerCtor(TT *a, size_t n) {
     return {a, n};
+}
+
+template<template<class> class T, class TT>
+auto ArrayLoggerCtor(TT *a, size_t n) {
+    return ArrayLoggerCtor<decltype(T(*a))>(a, n);
 }
 
 struct StringLogger {
@@ -108,7 +124,8 @@ struct CharLogger {
 
 struct ShaderLogger {
     const void *a;
-    GLSLShader result;
+    std::string source;
+    DWORD lang = 0;
     explicit ShaderLogger(const void *a);
 };
 
@@ -149,17 +166,9 @@ struct MyID3D10Resource_Logger {
 };
 
 class Logger {
-    LPCTSTR file_name;
-    bool started;
-
-    UINT64 start_count;
-    UINT64 frame_count;
-    HANDLE file;
-    std::ostringstream oss;
-    CRITICAL_SECTION oss_cs;
-
-    bool file_init();
-    void file_shutdown();
+    class Impl;
+    Impl *impl;
+    std::ostream &oss;
 
     bool log_begin();
     void log_end();
@@ -174,27 +183,50 @@ class Logger {
         log_assign();
         log_item(v);
     }
+    void log_fun_args();
+    template <class T>
+    void log_fun_args(T r) {
+        log_fun_end(r);
+    }
+    template<class T, class... Ts>
+    void log_fun_args(LPCSTR n, T v, Ts... as) {
+        log_fun_arg(n, v);
+        log_fun_args_next(as...);
+    }
     void log_fun_args_next();
-    template <class T>
+    template<class T>
     void log_fun_args_next(T r) {
-        log_fun_end_next(r);
+        log_fun_args(r);
     }
-    template <class T>
-    void log_fun_args_next(LPCSTR n, T v) {
-        log_fun_arg(n, v);
-        log_fun_end();
-    }
-    template <class T, class R>
-    void log_fun_args_next(LPCSTR n, T v, R r) {
-        log_fun_arg(n, v);
-        log_fun_end_next(r);
-    }
-    template<class T, class TT, class... Ts>
-    void log_fun_args_next(LPCSTR n, T v, LPCSTR nn, TT vv, Ts... as) {
-        log_fun_arg(n, v);
+    template<class... Ts>
+    void log_fun_args_next(LPCSTR n, Ts... as) {
         log_fun_sep();
-        log_fun_args_next(nn, vv, as...);
+        log_fun_args(n, as...);
     }
+
+    template<size_t N, class T, class... Ts>
+    void log_fun_args(const LogSkip<N> skip, LPCSTR n, T v, Ts... as) {
+        if (skip)
+            log_fun_args(*skip, as...);
+        else
+            log_fun_args(n, v, *skip, as...);
+    }
+    template<class... Ts>
+    void log_fun_args(const LogSkip<0> skip, Ts... as) {
+        log_fun_args(as...);
+    }
+    template<size_t N, class T, class... Ts>
+    void log_fun_args_next(const LogSkip<N> skip, LPCSTR n, T v, Ts... as) {
+        if (skip)
+            log_fun_args_next(*skip, as...);
+        else
+            log_fun_args_next(n, v, *skip, as...);
+    }
+    template<class... Ts>
+    void log_fun_args_next(const LogSkip<0> skip, Ts... as) {
+        log_fun_args_next(as...);
+    }
+
     void log_fun_sep();
     void log_fun_end();
     template<class T>
@@ -203,13 +235,13 @@ class Logger {
         log_item(v);
     }
     template<class... Ts>
-    void log_fun_name_begin_next(LPCSTR n, Ts... as) {
+    void log_fun_name_begin(LPCSTR n, Ts... as) {
         log_fun_name(n);
         log_fun_begin();
-        log_fun_args_next(as...);
+        log_fun_args(as...);
     }
     template<class T>
-    void log_fun_end_next(T r) {
+    void log_fun_end(T r) {
         log_fun_end();
         log_fun_ret(r);
     }
@@ -227,14 +259,30 @@ class Logger {
 
     template<class T>
     std::enable_if_t<std::is_arithmetic_v<T>> log_item(T a) {
-        oss << a;
+        oss << +a;
     }
+
+    void log_item(bool a);
+    void log_item(CHAR a);
+    void log_item(WCHAR a);
     void log_item(LPCSTR a);
     void log_item(LPCWSTR a);
     void log_item(const std::string &a);
 
+    void log_items_base();
+    template<class T, class... Ts>
+    void log_items_base(T a, Ts... as) {
+        log_item(a);
+        log_items_base(as...);
+    }
+
     template<class T>
     void log_item(T *a) {
+        log_item((const T *)a);
+    }
+
+    template<class T>
+    void log_item(const T *a) {
         if (a) log_item(NumHexLogger(a));
         else log_null();
     }
@@ -253,14 +301,14 @@ class Logger {
 
     template<class T>
     void log_item(NumBinLogger<T> a) {
-        LPBYTE b = &a.a;
+        auto b = (LPBYTE)&a.a;
         UINT n = sizeof(a.a);
         UINT bits = std::numeric_limits<BYTE>::digits;
+        BYTE m = (BYTE)1 << (bits - 1);
         oss << "0b";
         for (UINT i = n; i > 0;) {
             --i;
             BYTE c = b[i];
-            BYTE m = (BYTE)1 << (bits - 1);
             for (UINT j = 0; j < bits; ++j) {
                 oss << (c & m ? "1" : "0");
                 c <<= 1;
@@ -268,7 +316,7 @@ class Logger {
         }
     }
 
-    template<class TT, class T>
+    template<auto TT, class T>
     void log_item(ArrayLoggerBase<TT, T> a) {
         if (!a.a) { log_null(); return; }
         log_array_begin();
@@ -279,7 +327,7 @@ class Logger {
             } else {
                 log_array_sep();
             }
-            log_item(TT()(t));
+            log_item(TT(t));
         }
         log_array_end();
     }
@@ -290,11 +338,20 @@ class Logger {
         if (it != map.end()) {
             log_item(it->second);
         } else {
+if constexpr (std::is_enum_v<T>) {
+            auto v = std::underlying_type_t<T>(a);
+            if (hex) {
+                log_item(NumHexLogger(v));
+            } else {
+                log_item(+v);
+            }
+} else {
             if (hex) {
                 log_item(NumHexLogger(a));
             } else {
                 log_item(+a);
             }
+}
         }
     }
 
@@ -371,13 +428,16 @@ class Logger {
     void log_item(const D3D10_BLEND_DESC *a);
     void log_item(D3D10_BLEND a);
     void log_item(D3D10_BLEND_OP a);
-
-    void log_items_base();
-    template<class T, class... Ts>
-    void log_items_base(T a, Ts... as) {
-        log_item(a);
-        log_items_base(as...);
-    }
+    void log_item(const D3D10_DEPTH_STENCIL_DESC *a);
+    void log_item(D3D10_DEPTH_WRITE_MASK a);
+    void log_item(const D3D10_DEPTH_STENCILOP_DESC *a);
+    void log_item(D3D10_STENCIL_OP a);
+    void log_item(D3D10_SRV_DIMENSION a);
+    void log_item(D3D10_RTV_DIMENSION a);
+    void log_item(D3D10_DSV_DIMENSION a);
+    void log_item(const D3D10_TEX2D_SRV *a);
+    void log_item(const D3D10_TEX2D_RTV *a);
+    void log_item(const D3D10_TEX2D_DSV *a);
 
     void log_struct_members();
     template<class T>
@@ -420,60 +480,40 @@ public:
     Logger(LPCTSTR file_name);
     ~Logger();
 
-    LPCTSTR get_file_name();
+    void set_overlay(Overlay *overlay);
+    void set_config(Config *config);
+
     bool get_started();
-    bool start();
-    void stop();
-
     void next_frame();
-
-    template<class... Ts>
-    void log_items(Ts... as) {
-        if (log_begin()) {
-            log_items_base(as...);
-            log_end();
-        }
-    }
 
     template<class... Ts>
     void log_fun(std::string n, Ts... as) {
         if (log_begin()) {
-            log_fun_name_begin_next(n.c_str(), as...);
+            log_fun_name_begin(n.c_str(), as...);
             log_end();
         }
     }
 
-    template<class... Ts>
-    bool log_fun_custom_begin(std::string n, Ts... as) {
-        if (log_begin()) {
-            log_fun_name(n.c_str());
-            log_fun_begin();
-            log_fun_custom_args(as...);
-            return true;
-        }
-        return false;
-    }
-    void log_fun_custom_args();
-    template <class T>
-    void log_fun_custom_args(LPCSTR n, T v) {
-        log_fun_arg(n, v);
-    }
-    template<class T, class TT, class... Ts>
-    void log_fun_custom_args(LPCSTR n, T v, LPCSTR nn, TT vv, Ts... as) {
-        log_fun_custom_args(n, v);
-        log_fun_sep();
-        log_fun_custom_args(nn, vv, as...);
-    }
-    template<class... Ts>
-    void log_fun_custom_args_next(Ts... as) {
-        log_fun_sep();
-        log_fun_custom_args(as...);
-    }
-    void log_fun_custom_end();
+private:
+    template<class T> friend struct LogItem;
     template<class T>
-    void log_fun_custom_end(T r) {
-        log_fun_end_next(r);
-        log_end();
+    void log_item(LogItem<T> a) {
+        a.log_item(this);
+    }
+    template<class T>
+    auto log_item(const T &a)->decltype(log_item(LogItem<T>{&a})) {
+        log_item(LogItem<T>{&a});
+    }
+    template<class T>
+    auto log_item(const T *a)->decltype(log_item(LogItem<T>{a})) {
+        log_item(LogItem<T>{a});
+    }
+
+    template<class T>
+    auto log_item(const T &a)
+        ->std::enable_if_t<std::is_class_v<T>, decltype(log_item(&a))>
+    {
+        log_item(&a);
     }
 };
 extern Logger *default_logger;
@@ -485,27 +525,15 @@ extern Logger *default_logger;
 
 #if ENABLE_LOGGER
 
-#define LOG_STARTED (LOGGER->get_started())
-#define LOG_FUN(_, ...) do { if LOG_STARTED LOGGER->log_fun(__func__, ## __VA_ARGS__); } while (0)
-#define LOG_FUN_BEGIN(_, ...) (LOG_STARTED && LOGGER->log_fun_custom_begin(__func__, ## __VA_ARGS__))
-#define LOG_FUN_ARGS(...) (LOGGER->log_fun_custom_args(__VA_ARGS__))
-#define LOG_FUN_ARGS_NEXT(...) (LOGGER->log_fun_custom_args_next(__VA_ARGS__))
-#define LOG_FUN_END(...) (LOGGER->log_fun_custom_end(__VA_ARGS__))
-#define LOG_MFUN_DEF(n, ...) do { if LOG_STARTED LOGGER->log_fun(std::string(#n "::") + __func__, LOG_ARG(this), ## __VA_ARGS__); } while (0)
-#define LOG_MFUN_BEGIN_DEF(n, ...) (LOG_STARTED && LOGGER->log_fun_custom_begin(std::string(#n "::") + __func__, LOG_ARG(this), ## __VA_ARGS__))
-#define LOG_ITEMS(...) do { if LOG_STARTED LOGGER->log_items(__VA_ARGS__); } while (0)
+#define LOG_STARTED ((LOGGER)->get_started())
+#define LOG_FUN(_, ...) do { if LOG_STARTED (LOGGER)->log_fun(__func__, ## __VA_ARGS__); } while (0)
+#define LOG_MFUN_DEF(n, ...) do { if LOG_STARTED (LOGGER)->log_fun(std::string(#n "::") + __func__, LOG_ARG(this), ## __VA_ARGS__); } while (0)
 
 #else
 
 #define LOG_STARTED false
 #define LOG_FUN(_, ...) (void)0
-#define LOG_FUN_BEGIN(_, ...) false
-#define LOG_FUN_ARGS(...) (void)0
-#define LOG_FUN_ARGS_NEXT(...) (void)0
-#define LOG_FUN_END(...) (void)0
 #define LOG_MFUN_DEF(n, ...) (void)0
-#define LOG_MFUN_BEGIN_DEF(n, ...) false
-#define LOG_ITEMS(...) (void)0
 
 #endif
 

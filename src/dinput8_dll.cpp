@@ -1,15 +1,16 @@
 #include "dinput8_dll.h"
 #include "dxgiswapchain.h"
+#include "overlay.h"
+#include "conf.h"
 #include "log.h"
-
 #include "../minhook/include/MinHook.h"
+
+#define LOGGER default_logger
 
 #define DEFINE_PROC(r, n, v) \
     typedef r (__stdcall *n ## _t) v; \
     n ## _t p ## n; \
     extern "C" r __stdcall n v
-
-#define LOGGER default_logger
 
 // dinput8.dll
 
@@ -90,16 +91,67 @@ DEFINE_PROC(HRESULT, D3D10CreateDeviceAndSwapChain, (
 )) {
     HRESULT ret = E_NOTIMPL;
     if (pD3D10CreateDeviceAndSwapChain) {
-        ret = pD3D10CreateDeviceAndSwapChain(pAdapter, DriverType, Software, Flags, SDKVersion, pSwapChainDesc, ppSwapChain, ppDevice);
+        ret = pD3D10CreateDeviceAndSwapChain(
+            pAdapter,
+            DriverType,
+            Software,
+            Flags,
+            SDKVersion,
+            pSwapChainDesc,
+            ppSwapChain,
+            ppDevice
+        );
         if (ret == S_OK) {
-            new MyIDXGISwapChain(pSwapChainDesc, ppSwapChain, ppDevice);
+            auto sc = new MyIDXGISwapChain(
+                pSwapChainDesc,
+                ppSwapChain,
+                ppDevice
+            );
+            default_config->hwnd = pSwapChainDesc->OutputWindow;
+            sc->set_overlay(default_overlay);
+            sc->set_config(default_config);
         }
     }
     LOG_FUN(_, ret);
     return ret;
 }
 
+namespace {
+
 HMODULE base_dll;
+
+bool MinHook_Initialized;
+
+void minhook_init() {
+    if (MH_Initialize() != MH_OK) {
+    } else {
+        MinHook_Initialized = true;
+#define HOOK_PROC(m, n) do { \
+    LPVOID pTarget; \
+    if (MH_CreateHookApiEx( \
+        L ## #m, #n, \
+        (LPVOID)&n, \
+        (LPVOID *)&p ## n, \
+        &pTarget \
+    ) != MH_OK) { \
+    } else { \
+        if (MH_EnableHook(pTarget) != MH_OK) { \
+        } \
+    } \
+} while (0)
+        HOOK_PROC(d3d10, D3D10CreateDeviceAndSwapChain);
+    }
+}
+
+void minhook_shutdown() {
+    if (MinHook_Initialized) {
+        if (MH_Uninitialize() != MH_OK) {
+        }
+        MinHook_Initialized = false;
+    }
+}
+
+}
 
 void base_dll_init(HINSTANCE hinstDLL) {
     UINT len = GetSystemDirectory(NULL, 0);
@@ -123,11 +175,15 @@ void base_dll_init(HINSTANCE hinstDLL) {
         LOAD_PROC(DllRegisterServer);
         LOAD_PROC(DllUnregisterServer);
         LOAD_PROC(GetdfDIJoystick);
+
+        minhook_init();
     }
 }
 
 void base_dll_shutdown() {
     if (base_dll) {
+        minhook_shutdown();
+
         pDirectInput8Create = NULL;
         pDllCanUnloadNow = NULL;
         pDllGetClassObject = NULL;
@@ -136,31 +192,5 @@ void base_dll_shutdown() {
         pGetdfDIJoystick = NULL;
         FreeLibrary(base_dll);
         base_dll = NULL;
-    }
-}
-
-bool MinHook_Initialized;
-
-void minhook_init() {
-    if (MH_Initialize() != MH_OK) {
-    } else {
-        MinHook_Initialized = true;
-#define HOOK_PROC(m, n) do { \
-    LPVOID pTarget; \
-    if (MH_CreateHookApiEx(L ## #m, #n, (LPVOID)&n, (LPVOID *)&p ## n, &pTarget) != MH_OK) { \
-    } else { \
-        if (MH_EnableHook(pTarget) != MH_OK) { \
-        } \
-    } \
-} while (0)
-        HOOK_PROC(d3d10, D3D10CreateDeviceAndSwapChain);
-    }
-}
-
-void minhook_shutdown() {
-    if (MinHook_Initialized) {
-        if (MH_Uninitialize() != MH_OK) {
-        }
-        MinHook_Initialized = false;
     }
 }

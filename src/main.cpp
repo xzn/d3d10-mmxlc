@@ -13,6 +13,7 @@ bool _tstring_view_icmp::operator()(const _tstring_view &a, const _tstring_view 
 #include "log.h"
 #include "../RetroArch/retroarch.h"
 
+static Logger dummy_logger = {NULL};
 BOOL WINAPI DllMain(
     HINSTANCE hinstDLL, // handle to DLL module
     DWORD fdwReason,    // reason for calling function
@@ -26,17 +27,22 @@ BOOL WINAPI DllMain(
         // Return FALSE to fail DLL load.
         {
             DisableThreadLibraryCalls(hinstDLL);
-
             my_config_init();
-            InitializeCriticalSection(&Overlay::texts_cs);
-            Overlay::push_text(MOD_NAME " loaded");
-            default_overlays = new std::unordered_set<Overlay *>{};
-            default_config = new Config{};
+
+            default_overlay = new Overlay();
+            default_overlay(MOD_NAME " loaded");
+
+            default_config = new Config();
+
             default_ini = new Ini(INI_FILE_NAME);
+            default_ini->set_overlay(default_overlay);
+            default_ini->set_config(default_config);
+
             default_logger = new Logger(LOG_FILE_NAME);
+            default_logger->set_overlay(default_overlay);
+            default_logger->set_config(default_config);
 
             base_dll_init(hinstDLL);
-            minhook_init();
             break;
         }
 
@@ -51,18 +57,44 @@ BOOL WINAPI DllMain(
         case DLL_PROCESS_DETACH:
         // Perform any necessary cleanup.
         {
-            minhook_shutdown();
+            // May need to add synchronizations
+            // in this block.
             base_dll_shutdown();
 
             delete default_logger;
+            default_logger = &dummy_logger;
             delete default_ini;
             delete default_config;
-            delete default_overlays;
-            DeleteCriticalSection(&Overlay::texts_cs);
-            my_config_free();
+            delete default_overlay;
 
+            my_config_free();
             break;
         }
     }
     return TRUE; // Successful DLL_PROCESS_ATTACH.
+}
+
+class cs_wrapper::Impl {
+    CRITICAL_SECTION cs;
+    friend class cs_wrapper;
+};
+
+cs_wrapper::cs_wrapper() : impl(new Impl()) {
+    InitializeCriticalSection(&impl->cs);
+}
+cs_wrapper::~cs_wrapper() {
+    DeleteCriticalSection(&impl->cs);
+    delete impl;
+}
+
+void cs_wrapper::begin_cs() {
+    EnterCriticalSection(&impl->cs);
+}
+
+bool cs_wrapper::try_begin_cs() {
+    return TryEnterCriticalSection(&impl->cs);
+}
+
+void cs_wrapper::end_cs() {
+    LeaveCriticalSection(&impl->cs);
 }

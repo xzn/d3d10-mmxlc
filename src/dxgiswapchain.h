@@ -4,40 +4,13 @@
 #include "main.h"
 #include "unknown.h"
 
-class Overlay;
-class MyID3D10Device;
 class MyID3D10Texture2D;
+class Overlay;
+class Config;
 
 class MyIDXGISwapChain : public IDXGISwapChain {
-    Overlay *overlay;
-    MyID3D10Device *my_device;
-    UINT cached_width;
-    UINT cached_height;
-    UINT cached_flags;
-    UINT cached_buffer_count;
-    DXGI_FORMAT cached_format;
-    bool is_config_display = false;
-
-    struct Config {
-        UINT render_3d_width;
-        UINT render_3d_height;
-        UINT display_width;
-        UINT display_height;
-        UINT display_flags;
-        UINT display_buffer_count;
-        DXGI_FORMAT display_format;
-        bool render_3d_updated;
-        bool display_updated;
-    } config = {};
-    void update_config();
-
-    HRESULT my_resize_buffers(
-        UINT width,
-        UINT height,
-        UINT flags,
-        UINT buffer_count,
-        DXGI_FORMAT format
-    );
+    class Impl;
+    Impl *impl;
 
 public:
     MyIDXGISwapChain(
@@ -48,9 +21,12 @@ public:
 
     virtual ~MyIDXGISwapChain();
 
-    std::unordered_set<MyID3D10Texture2D *> bbs;
+    void set_overlay(Overlay *overlay);
+    void set_config(Config *config);
 
-    IUNKNOWN_DECL(MyIDXGISwapChain, IDXGISwapChain)
+    std::unordered_set<MyID3D10Texture2D *> &get_bbs();
+
+    IUNKNOWN_DECL(IDXGISwapChain)
 
     // IDXGISwapChain
 

@@ -1,11 +1,20 @@
 #include "conf.h"
 
-Config::Config() {
-    InitializeCriticalSection(&cs);
+class Config::Impl {
+    cs_wrapper cs;
+    friend class Config;
+};
+
+void Config::begin_config() {
+    impl->cs.begin_cs();
 }
 
-Config::~Config() {
-    DeleteCriticalSection(&cs);
+void Config::end_config() {
+    impl->cs.end_cs();
 }
+
+Config::Config() : impl(new Impl()) {}
+
+Config::~Config() { delete impl; }
 
 Config *default_config;

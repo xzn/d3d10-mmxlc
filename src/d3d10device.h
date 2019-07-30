@@ -3,166 +3,14 @@
 
 #include "main.h"
 #include "unknown.h"
-#include "../RetroArch/gfx/drivers/d3d10.h"
 
-#define MAX_SAMPLERS 16
-#define MAX_SHADER_RESOURCES 128
-#define MAX_CONSTANT_BUFFERS 15
-
-class MyID3D10PixelShader;
-class MyID3D10Buffer;
-class MyID3D10SamplerState;
-class MyID3D10RenderTargetView;
-class MyID3D10ShaderResourceView;
-class MyID3D10DepthStencilView;
-class MyID3D10Texture2D;
-class TextureAndViews;
-class TextureViewsAndBuffer;
+class Overlay;
+class Config;
 
 class MyID3D10Device : public ID3D10Device {
-    d3d10_video_t *d3d10 = NULL;
-    d3d10_video_t *d3d10_3d = NULL;
-    UINT64 frame_count = 0;
-
-    struct FilterState {
-        MyID3D10ShaderResourceView *srv;
-        MyID3D10Texture2D *rtv_tex;
-        MyID3D10PixelShader *ps;
-        bool t1;
-        MyID3D10SamplerState *psss;
-        bool x4;
-        UINT start_vertex_location;
-    } filter_state = {};
-    bool filter = false;
-    void clear_filter();
-
-    struct Config {
-        bool interp;
-        bool linear;
-        bool enhanced;
-    } config = {};
-    void update_config();
-
-    static const DXGI_FORMAT TEX_FORMAT;
-    void create_sampler(
-        D3D10_FILTER filter,
-        ID3D10SamplerState *&sampler
-    );
-    void create_texture(
-        UINT width,
-        UINT height,
-        ID3D10Texture2D *&texture,
-        DXGI_FORMAT format = TEX_FORMAT
-    );
-    void create_texture_mul(
-        UINT &orig_width,
-        UINT &orig_height,
-        ID3D10Texture2D *&texture
-    );
-    void create_rtv(
-        ID3D10Texture2D *tex,
-        ID3D10RenderTargetView *&rtv,
-        DXGI_FORMAT format = TEX_FORMAT
-    );
-    void create_srv(
-        ID3D10Texture2D *tex,
-        ID3D10ShaderResourceView *&srv,
-        DXGI_FORMAT format = TEX_FORMAT
-    );
-    void create_dsv(
-        ID3D10Texture2D *tex,
-        ID3D10DepthStencilView *&dsv,
-        DXGI_FORMAT format
-    );
-    bool set_render_tex_views_and_update(
-        MyID3D10Texture2D *tex,
-        UINT width,
-        UINT height,
-        UINT orig_width,
-        UINT orig_height,
-        bool need_vp = false
-    );
-    bool set_render_tex_views_and_update(
-        ID3D10Resource *r,
-        bool need_vp = false
-    );
-    void create_tex_and_views_nn(
-        TextureAndViews *tex,
-        UINT orig_width,
-        UINT orig_height
-    );
-    void create_tex_and_view_1(
-        TextureViewsAndBuffer *tex,
-        UINT width,
-        UINT height,
-        UINT orig_width,
-        UINT orig_height
-    );
-    void create_tex_and_view_1_v(
-        std::vector<TextureViewsAndBuffer *> &tex_v,
-        UINT orig_width,
-        UINT orig_height
-    );
-
-    struct FilterTemp {
-        ID3D10SamplerState *sampler_nn;
-        ID3D10SamplerState *sampler_linear;
-        TextureAndViews *tex_nn_x1;
-        TextureAndViews *tex_nn_x4;
-        std::vector<TextureViewsAndBuffer *>tex_1_x1;
-        std::vector<TextureViewsAndBuffer *>tex_1_x4;
-    } filter_temp = {};
-    void filter_temp_init();
-    void filter_temp_shutdown();
-
-    struct Size {
-        UINT sc_width;
-        UINT sc_height;
-        UINT render_width;
-        UINT render_height;
-        UINT render_3d_width;
-        UINT render_3d_height;
-        void resize(UINT width, UINT height);
-    } cached_size = {}, render_size = {};
-
-    MyID3D10PixelShader *cached_ps = NULL;
-    ID3D10VertexShader *cached_vs = NULL;
-    ID3D10GeometryShader *cached_gs = NULL;
-    ID3D10InputLayout *cached_il = NULL;
-    MyID3D10SamplerState *cached_psss = NULL;
-    MyID3D10SamplerState *cached_pssss[MAX_SAMPLERS] = {};
-    ID3D10SamplerState *render_pssss[MAX_SAMPLERS] = {};
-    MyID3D10RenderTargetView *cached_rtv = NULL;
-    MyID3D10DepthStencilView *cached_dsv = NULL;
-    MyID3D10ShaderResourceView *cached_pssrv = NULL;
-    MyID3D10ShaderResourceView *cached_pssrvs[MAX_SHADER_RESOURCES] = {};
-    ID3D10ShaderResourceView *render_pssrvs[MAX_SHADER_RESOURCES] = {};
-    D3D10_PRIMITIVE_TOPOLOGY cached_pt = D3D10_PRIMITIVE_TOPOLOGY_UNDEFINED;
-    struct BlendState {
-        ID3D10BlendState *pBlendState;
-        FLOAT BlendFactor[4];
-        UINT SampleMask;
-    } cached_bs = {};
-    struct VertexBuffers {
-        ID3D10Buffer *ppVertexBuffers[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-        UINT pStrides[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-        UINT pOffsets[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-    } cached_vbs = {};
-    ID3D10Buffer *cached_pscbs[MAX_CONSTANT_BUFFERS] = {};
-    ID3D10Buffer *cached_vscbs[MAX_CONSTANT_BUFFERS] = {};
-    UINT render_width = 0;
-    UINT render_height = 0;
-    UINT render_orig_width = 0;
-    UINT render_orig_height = 0;
-    D3D10_VIEWPORT render_vp = {};
-    D3D10_VIEWPORT cached_vp = {};
-    bool need_render_vp = false;
-    bool is_render_vp = false;
-    void set_render_vp();
-    void reset_render_vp();
-    bool render_3d = false;
-    UINT render_3d_width = 0;
-    UINT render_3d_height = 0;
+    template<class T> friend struct LogItem;
+    class Impl;
+    Impl *impl;
 
 public:
     MyID3D10Device(
@@ -173,7 +21,10 @@ public:
 
     virtual ~MyID3D10Device();
 
-    IUNKNOWN_DECL(MyID3D10Device, ID3D10Device)
+    IUNKNOWN_DECL(ID3D10Device)
+
+    void set_overlay(Overlay *overlay);
+    void set_config(Config *config);
 
     void present();
     void resize_render_3d(UINT width, UINT height);

@@ -51,7 +51,9 @@ else
 endif
 
 ifeq ($(o3),0)
-	o3_opt := -ggdb -ggdb3 -Og -fno-inline -fno-early-inlining -fvar-tracking -gvariable-location-views -ginternal-reset-location-views -ginline-points -D_GLIBCXX_DEBUG
+	o3_opt := -Og -fno-inline -fno-early-inlining -g
+	# o3_opt += -g3 -ggdb -ggdb3
+	# o3_opt += -fvar-tracking -gvariable-location-views -ginternal-reset-location-views -ginline-points -D_GLIBCXX_DEBUG
 	# o3_opt += -fno-merge-debug-strings -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 	lto := 0
 	dll_dbg := $(dll:%.dll=%.dbg)
@@ -145,9 +147,9 @@ $(dir_all):
 .PHONY: prep dll clean retroarch_hdr
 
 clean:
+	-$(RM) *.dll *.dbg $(prep_src)
 	-find obj/ -type f -name '*.o' -delete
 	-find obj/ -type f -name '*.d' -delete
 	-find obj/ -type d -empty -delete
-	-$(RM) *.dll *.dbg $(prep_src)
 
 -include $(dep_all)

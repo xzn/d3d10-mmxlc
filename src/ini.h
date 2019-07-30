@@ -3,19 +3,18 @@
 
 #include "main.h"
 
+class Config;
+class Overlay;
 class Ini {
-    struct ThreadState {
-        LPCTSTR file_name;
-        HANDLE file;
-        UINT64 time;
-        bool thread_running;
-    };
-    ThreadState *thread_state;
-    friend DWORD WINAPI ini_ThreadProc(LPVOID lpParameter);
+    class Impl;
+    Impl *impl;
 
 public:
     Ini(LPCTSTR file_name);
     ~Ini();
+
+    void set_config(Config *config);
+    void set_overlay(Overlay *overlay);
 };
 extern Ini *default_ini;
 

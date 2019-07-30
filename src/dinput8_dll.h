@@ -5,7 +5,5 @@
 
 void base_dll_init(HINSTANCE hinstDLL);
 void base_dll_shutdown();
-void minhook_init();
-void minhook_shutdown();
 
 #endif

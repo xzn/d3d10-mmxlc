@@ -1,12 +1,6 @@
 #include "tex.h"
 
-TextureAndViews::TextureAndViews() :
-    tex(NULL),
-    srv(NULL),
-    rtv(NULL),
-    width(0),
-    height(0)
-{}
+TextureAndViews::TextureAndViews() {}
 
 TextureAndViews::~TextureAndViews() {
     if (tex) tex->Release();
@@ -14,9 +8,14 @@ TextureAndViews::~TextureAndViews() {
     if (rtv) tex->Release();
 }
 
-TextureViewsAndBuffer::TextureViewsAndBuffer() :
-    ps_cb(NULL)
-{}
+TextureAndDepthViews::TextureAndDepthViews() {}
+
+TextureAndDepthViews::~TextureAndDepthViews() {
+    if (tex_ds) tex_ds->Release();
+    if (dsv) dsv->Release();
+}
+
+TextureViewsAndBuffer::TextureViewsAndBuffer() {}
 
 TextureViewsAndBuffer::~TextureViewsAndBuffer() {
     if (ps_cb) ps_cb->Release();
