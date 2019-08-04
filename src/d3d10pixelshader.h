@@ -21,7 +21,7 @@ public:
 
     DWORD get_bytecode_hash();
     SIZE_T get_bytecode_length();
-    std::string get_source();
+    const std::string &get_source();
     PIXEL_SHADER_ALPHA_DISCARD get_alpha_discard();
 
     MyID3D10PixelShader(

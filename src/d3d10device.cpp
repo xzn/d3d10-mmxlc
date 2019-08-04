@@ -1,10 +1,13 @@
 #include "d3d10device.h"
 #include "d3d10pixelshader.h"
+#include "d3d10vertexshader.h"
 #include "d3d10buffer.h"
 #include "d3d10texture1d.h"
 #include "d3d10texture2d.h"
 #include "d3d10texture3d.h"
 #include "d3d10samplerstate.h"
+#include "d3d10depthstencilstate.h"
+#include "d3d10inputlayout.h"
 #include "d3d10rendertargetview.h"
 #include "d3d10shaderresourceview.h"
 #include "d3d10depthstencilview.h"
@@ -15,6 +18,7 @@
 #include "unknown_impl.h"
 #include "../smhasher/MurmurHash3.h"
 #include "../RetroArch/gfx/drivers/d3d10.h"
+#include "half/include/half.hpp"
 
 #define LOGGER default_logger
 #define LOG_MFUN(_, ...) LOG_MFUN_DEF(MyID3D10Device, ## __VA_ARGS__)
@@ -92,7 +96,608 @@ UINT64 xorshift128p() {
     return a + b;
 }
 
+namespace {
+
+template<class = void, class...>
+struct DXGIBuffer_Logger;
+
+template<>
+struct DXGIBuffer_Logger<> {
+    const char *&buffer;
+};
+
+template<class T, class... Ts>
+struct DXGIBuffer_Logger : DXGIBuffer_Logger<Ts...> {};
+
+struct DXGIBufferType {
+
+template<size_t N>
+struct Typeless;
+
+template<size_t N>
+struct Unused;
+
+template<size_t N>
+struct SInt;
+
+template<size_t N>
+struct UInt;
+
+template<size_t N>
+struct SNorm;
+
+template<size_t N>
+struct UNorm;
+
+struct Float;
+struct Half;
+
+};
+
+}
+
+template<class... Ts>
+struct LogItem<DXGIBuffer_Logger<Ts...>> : DXGIBufferType {
+    DXGIBuffer_Logger<Ts...> &t;
+    LogItem(DXGIBuffer_Logger<Ts...> &t) : t(t) {}
+
+    static constexpr bool comp_size(size_t n) {
+        return n && n <= 32 && !(n % 8);
+    }
+
+    template<size_t N, class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<Typeless<N>, As...> &t) {
+        static_assert(comp_size(N));
+        UINT32 v = 0;
+        for (size_t i = 0; i < N; i += 8)
+            v |= (UINT32)*(UINT8 *)t.buffer++ << i;
+        l->log_item(NumHexLogger(v));
+    }
+
+    template<size_t N, class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<SInt<N>, As...> &t) {
+        static_assert(comp_size(N));
+        UINT32 v = 0;
+        for (size_t i = 0; i < N; i += 8)
+            v |= (UINT32)*(UINT8 *)t.buffer++ << i;
+        v <<= (32 - N);
+        auto s = (INT32)v;
+        s >>= (32 - N);
+        l->log_item(s);
+    }
+
+    template<size_t N, class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<UInt<N>, As...> &t) {
+        static_assert(comp_size(N));
+        UINT32 v = 0;
+        for (size_t i = 0; i < N; i += 8)
+            v |= (UINT32)*(UINT8 *)t.buffer++ << i;
+        l->log_item(v);
+    }
+
+    template<size_t N, class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<SNorm<N>, As...> &t) {
+        static_assert(comp_size(N));
+        UINT32 v = 0;
+        for (size_t i = 0; i < N; i += 8)
+            v |= (UINT32)*(UINT8 *)t.buffer++ << i;
+        v <<= (32 - N);
+        auto s = (INT32)v;
+        s >>= (32 - N);
+        auto n = std::max((double)s / (((UINT32)1 << (N - 1)) - 1), -1.);
+        l->log_item(n);
+    }
+
+    template<size_t N, class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<UNorm<N>, As...> &t) {
+        static_assert(comp_size(N));
+        UINT32 v = 0;
+        for (size_t i = 0; i < N; i += 8)
+            v |= (UINT32)*(UINT8 *)t.buffer++ << i;
+        auto n = (double)v / (((UINT64)1 << N) - 1);
+        l->log_item(n);
+    }
+
+    template<class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<Float, As...> &t) {
+        auto f = *(float *)t.buffer;
+        t.buffer += sizeof(f);
+        l->log_item(f);
+    }
+
+    template<class... As>
+    static void log_comp(Logger *l, DXGIBuffer_Logger<Half, As...> &t) {
+        auto f = *(half_float::half *)t.buffer;
+        t.buffer += sizeof(f);
+        l->log_item((float)f);
+    }
+
+    template<class A, class... As>
+    void log_comps(Logger *l, DXGIBuffer_Logger<A, As...> &t) {
+        log_comp(l, t);
+        log_comps_next(l, *(DXGIBuffer_Logger<As...> *)&t);
+    }
+    template<class A, class... As>
+    void log_comps_next(Logger *l, DXGIBuffer_Logger<A, As...> &t) {
+        l->log_array_sep();
+        log_comps(l, t);
+    }
+    template<size_t N, class... As>
+    void log_comps_next(Logger *l, DXGIBuffer_Logger<Unused<N>, As...> &t) {
+        static_assert(comp_size(N));
+        t.buffer += N / 8;
+        log_comps_next(l, *(DXGIBuffer_Logger<As...> *)&t);
+    }
+
+    void log_comps(Logger *l, DXGIBuffer_Logger<> &t) {}
+    void log_comps_next(Logger *l, DXGIBuffer_Logger<> &t) {
+        log_comps(l, t);
+    }
+
+    void log_item(Logger *l) {
+        l->log_array_begin();
+        log_comps(l, t);
+        l->log_array_end();
+    }
+};
+
 #define TEX_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
+
+const ENUM_MAP(D3D10_INPUT_CLASSIFICATION) D3D10_INPUT_CLASSIFICATION_ENUM_MAP = {
+    ENUM_MAP_ITEM(D3D10_INPUT_PER_VERTEX_DATA),
+    ENUM_MAP_ITEM(D3D10_INPUT_PER_INSTANCE_DATA),
+};
+
+template<>
+struct LogItem<D3D10_INPUT_CLASSIFICATION> {
+    const D3D10_INPUT_CLASSIFICATION a;
+    void log_item(Logger *l) const {
+        l->log_enum(D3D10_INPUT_CLASSIFICATION_ENUM_MAP, a);
+    }
+};
+
+struct MyVertexBufferElement_Logger {
+    const char *buffer;
+    const MyID3D10InputLayout *input_layout;
+};
+
+template<>
+struct LogItem<MyVertexBufferElement_Logger> : DXGIBufferType {
+    const MyVertexBufferElement_Logger *a;
+    LogItem(const MyVertexBufferElement_Logger *a) : a(a) {}
+    void log_item(Logger *l) const {
+        l->log_struct_begin();
+        auto descs = a->input_layout->get_descs();
+        auto cached = a->buffer;
+        for (UINT i = 0; i < a->input_layout->get_descs_num(); ++i, ++descs) {
+            if (i) l->log_struct_sep();
+            l->log_item(descs->SemanticName);
+            l->log_struct_member_access();
+            l->log_item(descs->SemanticIndex);
+            l->log_assign();
+            if (descs->InputSlot) {
+                l->log_struct_named(
+#define STRUCT descs
+                    LOG_STRUCT_MEMBER(InputSlot)
+#undef STRUCT
+                );
+            } else {
+                if (descs->AlignedByteOffset != D3D10_APPEND_ALIGNED_ELEMENT)
+                    cached = a->buffer + descs->AlignedByteOffset;
+                if (cached) switch (descs->Format) {
+                    case DXGI_FORMAT_R32G32B32A32_TYPELESS: {
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<32>, Typeless<32>, Typeless<32>, Typeless<32>
+                        >{cached});
+                        break;
+                    }
+
+                    case DXGI_FORMAT_R32G32B32A32_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Float, Float, Float, Float
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32B32A32_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<32>, UInt<32>, UInt<32>, UInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32B32A32_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<32>, SInt<32>, SInt<32>, SInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32B32_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<32>, Typeless<32>, Typeless<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32B32_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Float, Float, Float
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32B32_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<32>, UInt<32>, UInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32B32_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<32>, SInt<32>, SInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16B16A16_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<16>, Typeless<16>, Typeless<16>, Typeless<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Half, Half, Half, Half
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16B16A16_UNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            UNorm<16>, UNorm<16>, UNorm<16>, UNorm<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16B16A16_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<16>, UInt<16>, UInt<16>, UInt<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16B16A16_SNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            SNorm<16>, SNorm<16>, SNorm<16>, SNorm<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16B16A16_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<16>, SInt<16>, SInt<16>, SInt<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<32>, Typeless<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Float, Float
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<32>, UInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32G32_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<32>, SInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8B8A8_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<8>, Typeless<8>, Typeless<8>, Typeless<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8B8A8_UNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            UNorm<8>, UNorm<8>, UNorm<8>, UNorm<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8B8A8_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<8>, UInt<8>, UInt<8>, UInt<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8B8A8_SNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            SNorm<8>, SNorm<8>, SNorm<8>, SNorm<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8B8A8_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<8>, SInt<8>, SInt<8>, SInt<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<16>, Typeless<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Half, Half
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16_UNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            UNorm<16>, UNorm<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<16>, UInt<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16_SNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            SNorm<16>, SNorm<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16G16_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<16>, SInt<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_D32_FLOAT:
+                    case DXGI_FORMAT_R32_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Float
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R32_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<32>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<8>, Typeless<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8_UNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            UNorm<8>, UNorm<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<8>, UInt<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8_SNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            SNorm<8>, SNorm<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8G8_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<8>, SInt<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16_FLOAT:
+                        l->log_item(DXGIBuffer_Logger<
+                            Half
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_D16_UNORM:
+                    case DXGI_FORMAT_R16_UNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            UNorm<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16_SNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            SNorm<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R16_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<16>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8_TYPELESS:
+                        l->log_item(DXGIBuffer_Logger<
+                            Typeless<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_A8_UNORM:
+                    case DXGI_FORMAT_R8_UNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            UNorm<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8_UINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            UInt<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8_SNORM:
+                        l->log_item(DXGIBuffer_Logger<
+                            SNorm<8>
+                        >{cached});
+                        break;
+
+                    case DXGI_FORMAT_R8_SINT:
+                        l->log_item(DXGIBuffer_Logger<
+                            SInt<8>
+                        >{cached});
+                        break;
+
+                    default:
+                        l->log_struct_named(
+#define STRUCT descs
+                            LOG_STRUCT_MEMBER(Format)
+#undef STRUCT
+                        );
+                        cached = NULL;
+                        break;
+                } else {
+                    l->log_struct_named(
+#define STRUCT descs
+                        LOG_STRUCT_MEMBER(Format)
+#undef STRUCT
+                    );
+                }
+            }
+        }
+        l->log_struct_end();
+    }
+};
+
+struct MyVertexBuffer_Logger {
+    const MyID3D10InputLayout *input_layout;
+    const MyID3D10Buffer *vertex_buffer;
+    UINT stride;
+    UINT offset;
+    UINT VertexCount;
+    UINT StartVertexLocation;
+};
+
+template<>
+struct LogItem<MyVertexBuffer_Logger> {
+    const MyVertexBuffer_Logger *a;
+    void log_item(Logger *l) const {
+        l->log_struct_begin();
+        l->log_struct_members_named(
+            "vb_cached_state", a->vertex_buffer->get_cached_state()
+        );
+        if (auto cached = a->vertex_buffer->get_cached()) {
+            l->log_struct_sep();
+            l->log_item("vb_cached");
+            l->log_assign();
+            l->log_array_begin();
+
+            cached += a->offset + a->stride * a->StartVertexLocation;
+            for (UINT i = 0; i < a->VertexCount; ++i, cached += a->stride) {
+                if (i) l->log_array_sep();
+                l->log_item(
+                    MyVertexBufferElement_Logger{cached, a->input_layout}
+                );
+            }
+
+            l->log_array_end();
+        }
+        l->log_struct_end();
+    }
+};
+
+struct MyIndexedVertexBuffer_Logger {
+    const MyID3D10InputLayout *input_layout;
+    const MyID3D10Buffer *vertex_buffer;
+    UINT stride;
+    UINT offset;
+    const MyID3D10Buffer *index_buffer;
+    DXGI_FORMAT index_format;
+    UINT index_offset;
+    UINT IndexCount;
+    UINT StartIndexLocation;
+    INT BaseVertexLocation;
+};
+
+template<>
+struct LogItem<MyIndexedVertexBuffer_Logger> {
+    const MyIndexedVertexBuffer_Logger *a;
+    void log_item(Logger *l) const {
+        l->log_struct_begin();
+        l->log_struct_members_named(
+            "vb_cached_state", a->vertex_buffer->get_cached_state(),
+            "ib_cached_state", a->index_buffer->get_cached_state()
+        );
+        auto vb_cached = a->vertex_buffer->get_cached();
+        auto ib_cached = a->index_buffer->get_cached();
+        if (ib_cached) {
+            l->log_struct_sep();
+            l->log_item("vb_cached");
+            l->log_assign();
+            l->log_array_begin();
+
+            bool ib_32 = a->index_format == DXGI_FORMAT_R32_UINT;
+            if (ib_32 || a->index_format == DXGI_FORMAT_R16_UINT) {
+                vb_cached +=
+                    a->offset + a->stride * a->BaseVertexLocation;
+                ib_cached +=
+                    a->index_offset +
+                    (ib_32 ? sizeof(UINT32) : sizeof(UINT16)) *
+                        a->StartIndexLocation;
+                for (UINT i = 0; i < a->IndexCount; ++i) {
+                    if (i) l->log_array_sep();
+                    UINT vb_i = ib_32 ?
+                        ((UINT32 *)ib_cached)[i] :
+                        ((UINT16 *)ib_cached)[i];
+                    l->log_item(
+                        MyVertexBufferElement_Logger{
+                            vb_cached + a->stride * vb_i,
+                            a->input_layout
+                        }
+                    );
+                }
+            }
+
+            l->log_array_end();
+        }
+        l->log_struct_end();
+    }
+};
 
 class MyID3D10Device::Impl {
     friend class MyID3D10Device;
@@ -111,7 +716,7 @@ class MyID3D10Device::Impl {
         MyID3D10ShaderResourceView *srv;
         MyID3D10Texture2D *rtv_tex;
         MyID3D10PixelShader *ps;
-        ID3D10VertexShader *vs;
+        MyID3D10VertexShader *vs;
         bool t1;
         MyID3D10SamplerState *psss;
         bool x4;
@@ -658,58 +1263,35 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
     }
 
     void filter_temp_shutdown() {
-        if (filter_temp.sampler_nn) {
+        if (filter_temp.sampler_nn)
             filter_temp.sampler_nn->Release();
-            filter_temp.sampler_nn = NULL;
-        }
-        if (filter_temp.sampler_linear) {
+        if (filter_temp.sampler_linear)
             filter_temp.sampler_linear->Release();
-            filter_temp.sampler_linear = NULL;
-        }
-        if (filter_temp.sampler_wrap) {
+        if (filter_temp.sampler_wrap)
             filter_temp.sampler_wrap->Release();
-            filter_temp.sampler_wrap = NULL;
-        }
-        if (filter_temp.tex_nn_x1) {
+        if (filter_temp.tex_nn_x1)
             delete filter_temp.tex_nn_x1;
-            filter_temp.tex_nn_x1 = NULL;
-        }
-        if (filter_temp.tex_nn_x4) {
+        if (filter_temp.tex_nn_x4)
             delete filter_temp.tex_nn_x4;
-            filter_temp.tex_nn_x4 = NULL;
-        }
-        if (filter_temp.tex_nn_x6) {
+        if (filter_temp.tex_nn_x6)
             delete filter_temp.tex_nn_x6;
-            filter_temp.tex_nn_x6 = NULL;
-        }
-        if (filter_temp.tex_t2) {
+        if (filter_temp.tex_t2)
             delete filter_temp.tex_t2;
-            filter_temp.tex_t2 = NULL;
-        }
-        if (filter_temp.tex_x8) {
+        if (filter_temp.tex_x8)
             delete filter_temp.tex_x8;
-            filter_temp.tex_x8 = NULL;
-        }
-        for (TextureAndViews *tex : filter_temp.tex_1_x1) {
+        for (auto tex : filter_temp.tex_1_x1)
             delete tex;
-        }
-        filter_temp.tex_1_x1.clear();
-        for (TextureAndViews *tex : filter_temp.tex_1_x4) {
+        for (auto tex : filter_temp.tex_1_x4)
             delete tex;
-        }
-        filter_temp.tex_1_x4.clear();
-        for (TextureAndViews *tex : filter_temp.tex_1_x6) {
+        for (auto tex : filter_temp.tex_1_x6)
             delete tex;
-        }
-        filter_temp.tex_1_x6.clear();
+        filter_temp = {};
     }
 
     struct LinearFilterConditions {
         PIXEL_SHADER_ALPHA_DISCARD alpha_discard;
-        UINT Width0;
-        UINT Height0;
-        UINT Width1;
-        UINT Height1;
+        std::vector<const D3D10_SAMPLER_DESC *> samplers_descs;
+        std::vector<const D3D10_TEXTURE2D_DESC *> texs_descs;
     } linear_conditions = {};
 
     friend class LogItem<LinearFilterConditions>;
@@ -721,50 +1303,45 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
         linear_conditions = {};
         if (!render_linear && !LOG_STARTED) return;
 
-        MyID3D10SamplerState *ss0 = cached_pssss[0];
-        MyID3D10SamplerState *ss1 = cached_pssss[1];
-        MyID3D10ShaderResourceView *srv0 = cached_pssrvs[0];
-        MyID3D10ShaderResourceView *srv1 = cached_pssrvs[1];
         if (cached_ps)
             linear_conditions.alpha_discard =
                 cached_ps->get_alpha_discard();
-        if (
-            srv0 &&
-            srv0->get_desc().ViewDimension ==
-                D3D10_SRV_DIMENSION_TEXTURE2D
+
+        ID3D10SamplerState *sss[MAX_SAMPLERS] = {};
+        auto sss_inner = sss;
+        auto pssss = cached_pssss;
+        for (
+            auto srvs = cached_pssrvs;
+            *srvs;
+            ++srvs, ++pssss, ++sss_inner
         ) {
-            auto &desc0 =
-                ((MyID3D10Texture2D *)srv0->get_resource())->
-                    get_desc();
-            linear_conditions.Width0 = desc0.Width;
-            linear_conditions.Height0 = desc0.Height;
-        }
-        if (
-            srv1 &&
-            srv1->get_desc().ViewDimension ==
-                D3D10_SRV_DIMENSION_TEXTURE2D
-        ) {
-            auto &desc1 =
-                ((MyID3D10Texture2D *)srv1->get_resource())->
-                    get_desc();
-            linear_conditions.Width1 = desc1.Width;
-            linear_conditions.Height1 = desc1.Height;
+            auto srv = *srvs;
+            linear_conditions.texs_descs.push_back(
+                srv->get_desc().ViewDimension ==
+                    D3D10_SRV_DIMENSION_TEXTURE2D ?
+                    &((MyID3D10Texture2D *)srv->get_resource())->
+                        get_desc() :
+                    NULL
+            );
+            auto ss = *pssss;
+            linear_conditions.samplers_descs.push_back(
+                ss ? &ss->get_desc() : NULL
+            );
+            *sss_inner = ss ? ss->get_inner() : NULL;
         }
         if (
             render_linear &&
             linear_conditions.alpha_discard ==
                 PIXEL_SHADER_ALPHA_DISCARD::EQUAL
         ) {
-            ID3D10SamplerState *sss[2] =
-                {ss0->get_inner(), ss1->get_inner()};
-            inner->PSSetSamplers(0, 2, sss);
+            inner->PSSetSamplers(0, MAX_SAMPLERS, sss);
             linear_restore = true;
         }
     }
 
     void linear_conditions_end() {
         if (linear_restore) {
-            inner->PSSetSamplers(0, 2, render_pssss);
+            inner->PSSetSamplers(0, MAX_SAMPLERS, render_pssss);
         }
     }
 
@@ -780,15 +1357,16 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             sc_height = height;
             render_width = sc_height * 4 / 3;
             render_height = sc_height;
-            render_3d_width = render_width;
-            render_3d_height = render_height;
+            render_3d_width = sc_width * 3 / 4;
+            render_3d_height = sc_height;
         }
     } cached_size = {}, render_size = {};
 
     MyID3D10PixelShader *cached_ps = NULL;
-    ID3D10VertexShader *cached_vs = NULL;
+    MyID3D10VertexShader *cached_vs = NULL;
     ID3D10GeometryShader *cached_gs = NULL;
-    ID3D10InputLayout *cached_il = NULL;
+    MyID3D10InputLayout *cached_il = NULL;
+    MyID3D10DepthStencilState *cached_dss = NULL;
     MyID3D10SamplerState *cached_pssss[MAX_SAMPLERS] = {};
     ID3D10SamplerState *render_pssss[MAX_SAMPLERS] = {};
     MyID3D10RenderTargetView *cached_rtv = NULL;
@@ -806,9 +1384,15 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
         ID3D10Buffer *ppVertexBuffers[
             D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
         ];
+        MyID3D10Buffer *vertex_buffers[
+            D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT
+        ];
         UINT pStrides[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
         UINT pOffsets[D3D10_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
     } cached_vbs = {};
+    MyID3D10Buffer *cached_ib = NULL;
+    DXGI_FORMAT cached_ib_format = DXGI_FORMAT_UNKNOWN;
+    UINT cached_ib_offset = 0;
     ID3D10Buffer *cached_pscbs[MAX_CONSTANT_BUFFERS] = {};
     ID3D10Buffer *cached_vscbs[MAX_CONSTANT_BUFFERS] = {};
     UINT render_width = 0;
@@ -947,7 +1531,17 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
     ) {
         set_render_vp();
         linear_conditions_begin();
+        MyVertexBuffer_Logger vertices = {
+            .input_layout = cached_il,
+            .vertex_buffer = cached_vbs.vertex_buffers[0],
+            .stride = cached_vbs.pStrides[0],
+            .offset = cached_vbs.pOffsets[0],
+            .VertexCount = VertexCount,
+            .StartVertexLocation = StartVertexLocation
+        };
         LOG_MFUN(_,
+            LogIf<1>{linear_restore},
+            LOG_ARG(vertices),
             LOG_ARG(VertexCount),
             LOG_ARG(StartVertexLocation),
             LOG_ARG(linear_conditions)
@@ -1048,16 +1642,6 @@ if constexpr (ENABLE_SLANG_SHADER) {
         auto psss = *cached_pssss;
         if (!psss) goto end;
         filter_next = filter && psss == filter_state.psss;
-
-        D3D10_SAMPLER_DESC &sampler_desc = psss->get_desc();
-
-        if (
-            sampler_desc.Filter != D3D10_FILTER_MIN_MAG_MIP_POINT ||
-            sampler_desc.AddressU != D3D10_TEXTURE_ADDRESS_CLAMP ||
-            sampler_desc.AddressV != D3D10_TEXTURE_ADDRESS_CLAMP ||
-            sampler_desc.AddressW != D3D10_TEXTURE_ADDRESS_CLAMP ||
-            sampler_desc.ComparisonFunc != D3D10_COMPARISON_NEVER
-        ) goto end;
 
         if (!srv) goto end;
 
@@ -1257,9 +1841,9 @@ if constexpr (ENABLE_SLANG_SHADER) {
                 MAX_CONSTANT_BUFFERS,
                 cached_vscbs
             );
-            inner->IASetInputLayout(cached_il);
+            inner->IASetInputLayout(cached_il->get_inner());
             restore_ps();
-            inner->VSSetShader(cached_vs);
+            inner->VSSetShader(cached_vs->get_inner());
             inner->GSSetShader(cached_gs);
             restore_vps();
             restore_rtvs();
@@ -1445,7 +2029,7 @@ end:
                     set_srv(filter_temp.tex_t2->srv);
                     set_psss(filter_temp.sampler_linear);
                     set_filter_state_ps();
-                    inner->VSSetShader(filter_state.vs);
+                    inner->VSSetShader(filter_state.vs->get_inner());
                     inner->IASetVertexBuffers(
                         0,
                         1,
@@ -1464,7 +2048,7 @@ end:
                         cached_vbs.pStrides,
                         cached_vbs.pOffsets
                     );
-                    inner->VSSetShader(cached_vs);
+                    inner->VSSetShader(cached_vs->get_inner());
                     restore_ps();
                     restore_pssrvs();
                 }
@@ -1693,8 +2277,11 @@ void STDMETHODCALLTYPE MyID3D10Device::VSSetShader(
     LOG_MFUN(_,
         LOG_ARG(pVertexShader)
     );
-    impl->cached_vs = pVertexShader;
-    impl->inner->VSSetShader(pVertexShader);
+    auto vertex_shader = (MyID3D10VertexShader *)pVertexShader;
+    impl->cached_vs = vertex_shader;
+    impl->inner->VSSetShader(
+        vertex_shader ? vertex_shader->get_inner() : NULL
+    );
 }
 
 #define ENUM_CLASS PIXEL_SHADER_ALPHA_DISCARD
@@ -1709,9 +2296,9 @@ const ENUM_MAP(ENUM_CLASS) PIXEL_SHADER_ALPHA_DISCARD_ENUM_MAP = {
 
 template<>
 struct LogItem<PIXEL_SHADER_ALPHA_DISCARD> {
-    const PIXEL_SHADER_ALPHA_DISCARD *a;
+    PIXEL_SHADER_ALPHA_DISCARD a;
     void log_item(Logger *l) const {
-        l->log_enum(PIXEL_SHADER_ALPHA_DISCARD_ENUM_MAP, *a);
+        l->log_enum(PIXEL_SHADER_ALPHA_DISCARD_ENUM_MAP, a);
     }
 };
 
@@ -1721,25 +2308,45 @@ struct LogItem<MyID3D10Device::Impl::LinearFilterConditions> {
         linear_conditions;
     void log_item(Logger *l) const {
         l->log_struct_begin();
-    #define STRUCT linear_conditions
+#define STRUCT linear_conditions
         l->log_struct_members_named(
             LOG_STRUCT_MEMBER(alpha_discard)
         );
-        if (STRUCT->Width0 && STRUCT->Height0) {
-            l->log_struct_sep();
-            l->log_struct_members_named(
-                LOG_STRUCT_MEMBER(Width0),
-                LOG_STRUCT_MEMBER(Height0)
-            );
+        auto
+            sd_it = STRUCT->samplers_descs.begin(),
+            sd_it_end = STRUCT->samplers_descs.end();
+        auto
+            td_it = STRUCT->texs_descs.begin(),
+            td_it_end = STRUCT->texs_descs.end();
+        for (
+            size_t i = 0;
+            td_it != td_it_end && sd_it != sd_it_end;
+            ++td_it, ++sd_it, ++i
+        ) {
+            auto sd = *sd_it;
+            auto td = *td_it;
+            if (td) {
+#define LOG_DESC_MEMBER(m) do { \
+    l->log_struct_sep(); \
+    l->log_item(i); \
+    l->log_struct_member_access(); \
+    l->log_item(#m); \
+    l->log_assign(); \
+    l->log_item(DESC->m); \
+} while (0)
+#define DESC td
+                LOG_DESC_MEMBER(Width);
+                LOG_DESC_MEMBER(Height);
+#undef DESC
+            }
+            if (sd) {
+#define DESC sd
+                LOG_DESC_MEMBER(Filter);
+#undef DESC
+            }
+#undef LOG_DESC_MEMBER
         }
-        if (STRUCT->Width1 && STRUCT->Height1) {
-            l->log_struct_sep();
-            l->log_struct_members_named(
-                LOG_STRUCT_MEMBER(Width1),
-                LOG_STRUCT_MEMBER(Height1)
-            );
-        }
-    #undef STRUCT
+#undef STRUCT
         l->log_struct_end();
     }
 };
@@ -1752,7 +2359,21 @@ void STDMETHODCALLTYPE MyID3D10Device::DrawIndexed(
     impl->set_render_vp();
     impl->linear_conditions_begin();
     auto &linear_conditions = impl->linear_conditions;
+    MyIndexedVertexBuffer_Logger vertices = {
+        .input_layout = impl->cached_il,
+        .vertex_buffer = impl->cached_vbs.vertex_buffers[0],
+        .stride = impl->cached_vbs.pStrides[0],
+        .offset = impl->cached_vbs.pOffsets[0],
+        .index_buffer = impl->cached_ib,
+        .index_format = impl->cached_ib_format,
+        .index_offset = impl->cached_ib_offset,
+        .IndexCount = IndexCount,
+        .StartIndexLocation = StartIndexLocation,
+        .BaseVertexLocation = BaseVertexLocation,
+    };
     LOG_MFUN(_,
+        LogIf<1>{impl->linear_restore},
+        LOG_ARG(vertices),
         LOG_ARG(IndexCount),
         LOG_ARG(StartIndexLocation),
         LOG_ARG(BaseVertexLocation),
@@ -1806,11 +2427,14 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetConstantBuffers(
 void STDMETHODCALLTYPE MyID3D10Device::IASetInputLayout(
     ID3D10InputLayout *pInputLayout
 ) {
+    auto input_layout = (MyID3D10InputLayout *)pInputLayout;
     LOG_MFUN(_,
-        LOG_ARG(pInputLayout)
+        LOG_ARG(input_layout)
     );
-    impl->cached_il = pInputLayout;
-    impl->inner->IASetInputLayout(pInputLayout);
+    impl->cached_il = input_layout;
+    impl->inner->IASetInputLayout(
+        input_layout ? input_layout->get_inner() : NULL
+    );
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::IASetVertexBuffers(
@@ -1834,6 +2458,11 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetVertexBuffers(
             vertex_buffers[i]->get_inner() : NULL;
     }
     if (NumBuffers) {
+        memcpy(
+            impl->cached_vbs.vertex_buffers + StartSlot,
+            vertex_buffers,
+            sizeof(void *) * NumBuffers
+        );
         memcpy(
             impl->cached_vbs.ppVertexBuffers + StartSlot,
             buffers,
@@ -1865,6 +2494,9 @@ void STDMETHODCALLTYPE MyID3D10Device::IASetIndexBuffer(
     UINT Offset
 ) {
     auto index_buffer = (MyID3D10Buffer *)pIndexBuffer;
+    impl->cached_ib = index_buffer;
+    impl->cached_ib_format = Format;
+    impl->cached_ib_offset = Offset;
     LOG_MFUN(_,
         LOG_ARG(index_buffer),
         LOG_ARG(Format),
@@ -2158,12 +2790,16 @@ void STDMETHODCALLTYPE MyID3D10Device::OMSetDepthStencilState(
     ID3D10DepthStencilState *pDepthStencilState,
     UINT StencilRef
 ) {
+    auto depth_stencil_state =
+        (MyID3D10DepthStencilState *)pDepthStencilState;
+    impl->cached_dss = depth_stencil_state;
     LOG_MFUN(_,
-        LOG_ARG(pDepthStencilState),
+        LOG_ARG(depth_stencil_state),
         LOG_ARG_TYPE(StencilRef, NumHexLogger)
     );
     impl->inner->OMSetDepthStencilState(
-        pDepthStencilState,
+        depth_stencil_state ?
+            depth_stencil_state->get_inner() : NULL,
         StencilRef
     );
 }
@@ -2267,12 +2903,16 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
     if (dstType != srcType) return;
     auto box = pSrcBox ? *pSrcBox : D3D10_BOX{};
     switch (dstType) {
-        case D3D10_RESOURCE_DIMENSION_BUFFER:
+        case D3D10_RESOURCE_DIMENSION_BUFFER: {
+            auto buffer = (MyID3D10Buffer *)pDstResource;
+            if (buffer->get_cached())
+                buffer->get_cached_state() = false;
             pDstResource =
-                ((MyID3D10Buffer *)pDstResource)->get_inner();
+                buffer->get_inner();
             pSrcResource =
                 ((MyID3D10Buffer *)pSrcResource)->get_inner();
             break;
+        }
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE1D:
             pDstResource =
@@ -2281,8 +2921,7 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
                 ((MyID3D10Texture1D *)pSrcResource)->get_inner();
             break;
 
-        case D3D10_RESOURCE_DIMENSION_TEXTURE2D:
-        {
+        case D3D10_RESOURCE_DIMENSION_TEXTURE2D: {
             auto tex_dst =
                 (MyID3D10Texture2D *)pDstResource;
             auto tex_src =
@@ -2361,12 +3000,16 @@ void STDMETHODCALLTYPE MyID3D10Device::CopyResource(
     pSrcResource->GetType(&srcType);
     if (dstType != srcType) return;
     switch (dstType) {
-        case D3D10_RESOURCE_DIMENSION_BUFFER:
+        case D3D10_RESOURCE_DIMENSION_BUFFER: {
+            auto buffer = (MyID3D10Buffer *)pDstResource;
+            if (buffer->get_cached())
+                buffer->get_cached_state() = false;
             pDstResource =
-                ((MyID3D10Buffer *)pDstResource)->get_inner();
+                buffer->get_inner();
             pSrcResource =
                 ((MyID3D10Buffer *)pSrcResource)->get_inner();
             break;
+        }
 
         case D3D10_RESOURCE_DIMENSION_TEXTURE1D:
             pDstResource =
@@ -2412,14 +3055,48 @@ void STDMETHODCALLTYPE MyID3D10Device::UpdateSubresource(
     ID3D10Resource *resource_inner;
     int tex_type = 0;
     switch (dstType) {
-        case D3D10_RESOURCE_DIMENSION_BUFFER:
-        {
+        case D3D10_RESOURCE_DIMENSION_BUFFER: {
             auto buffer = (MyID3D10Buffer *)pDstResource;
-            if (
-                buffer->get_desc().BindFlags ==
-                    D3D10_BIND_CONSTANT_BUFFER
-            )
-                ByteWidth = buffer->get_desc().ByteWidth;
+            switch (buffer->get_desc().BindFlags) {
+                case D3D10_BIND_CONSTANT_BUFFER:
+                    ByteWidth = buffer->get_desc().ByteWidth;
+                    break;
+
+                case D3D10_BIND_INDEX_BUFFER:
+                case D3D10_BIND_VERTEX_BUFFER:
+                    if (!buffer->get_cached()) break;
+                    if (pDstBox) {
+                        if (
+                            pSrcData &&
+                            pDstBox->left < pDstBox->right &&
+                            pDstBox->top < pDstBox->bottom &&
+                            pDstBox->front < pDstBox->back
+                        ) {
+                            memcpy(
+                                buffer->get_cached() +
+                                    pDstBox->left,
+                                pSrcData,
+                                std::min(
+                                    pDstBox->right - pDstBox->left,
+                                    buffer->get_desc().ByteWidth -
+                                        pDstBox->left
+                                )
+                            );
+                        }
+                    } else {
+                        if (pSrcData) {
+                            memcpy(
+                                buffer->get_cached(),
+                                pSrcData,
+                                buffer->get_desc().ByteWidth
+                            );
+                        }
+                    }
+                    break;
+
+                default:
+                    break;
+            }
             resource_inner = buffer->get_inner();
             break;
         }
@@ -2429,8 +3106,7 @@ void STDMETHODCALLTYPE MyID3D10Device::UpdateSubresource(
                 ((MyID3D10Texture1D *)pDstResource)->get_inner();
             break;
 
-        case D3D10_RESOURCE_DIMENSION_TEXTURE2D:
-        {
+        case D3D10_RESOURCE_DIMENSION_TEXTURE2D: {
             auto tex = (MyID3D10Texture2D *)pDstResource;
             resource_inner = tex->get_inner();
             if (!LOG_STARTED) break;
@@ -2699,6 +3375,10 @@ void STDMETHODCALLTYPE MyID3D10Device::VSGetShader(
     impl->inner->VSGetShader(
         ppVertexShader
     );
+    if (ppVertexShader)
+        *ppVertexShader = *ppVertexShader ?
+            cached_vss_map.find(*ppVertexShader)->second :
+            NULL;
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::PSGetConstantBuffers(
@@ -2726,6 +3406,10 @@ void STDMETHODCALLTYPE MyID3D10Device::IAGetInputLayout(
     impl->inner->IAGetInputLayout(
         ppInputLayout
     );
+    if (ppInputLayout)
+        *ppInputLayout = *ppInputLayout ?
+            cached_ils_map.find(*ppInputLayout)->second :
+            NULL;
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::IAGetVertexBuffers(
@@ -2931,6 +3615,10 @@ void STDMETHODCALLTYPE MyID3D10Device::OMGetDepthStencilState(
         ppDepthStencilState,
         pStencilRef
     );
+    if (ppDepthStencilState)
+        *ppDepthStencilState = *ppDepthStencilState ?
+            cached_dsss_map.find(*ppDepthStencilState)->second :
+            NULL;
     LOG_MFUN(_,
         LOG_ARG(*ppDepthStencilState),
         LOG_ARG_TYPE(*pStencilRef, NumHexLogger)
@@ -3071,6 +3759,12 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateBuffer(
         ppBuffer
     );
     if (ret == S_OK) {
+        new MyID3D10Buffer(
+            ppBuffer,
+            pDesc,
+            xorshift128p(),
+            pInitialData
+        );
         if (pDesc->BindFlags == D3D10_BIND_CONSTANT_BUFFER) {
             LOG_MFUN(_,
                 LOG_ARG(pDesc),
@@ -3089,7 +3783,6 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateBuffer(
                 ret
             );
         }
-        new MyID3D10Buffer(ppBuffer, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -3110,12 +3803,12 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateTexture1D(
         ppTexture1D
     );
     if (ret == S_OK) {
+        new MyID3D10Texture1D(ppTexture1D, pDesc, xorshift128p());
         LOG_MFUN(_,
             LOG_ARG(pDesc),
             LOG_ARG(*ppTexture1D),
             ret
         );
-        new MyID3D10Texture1D(ppTexture1D, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -3136,12 +3829,12 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateTexture2D(
         ppTexture2D
     );
     if (ret == S_OK) {
+        new MyID3D10Texture2D(ppTexture2D, pDesc, xorshift128p());
         LOG_MFUN(_,
             LOG_ARG(pDesc),
             LOG_ARG(*ppTexture2D),
             ret
         );
-        new MyID3D10Texture2D(ppTexture2D, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -3162,12 +3855,12 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateTexture3D(
         ppTexture3D
     );
     if (ret == S_OK) {
+        new MyID3D10Texture3D(ppTexture3D, pDesc, xorshift128p());
         LOG_MFUN(_,
             LOG_ARG(pDesc),
             LOG_ARG(*ppTexture3D),
             ret
         );
-        new MyID3D10Texture3D(ppTexture3D, pDesc, xorshift128p());
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),
@@ -3384,29 +4077,26 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateInputLayout(
         ppInputLayout
     );
     if (ret == S_OK) {
-        LOG_MFUN(_,
-            LOG_ARG_TYPE(
-                pInputElementDescs,
-                ArrayLoggerRef,
-                NumElements
-            ),
-            LOG_ARG_TYPE(
-                ppInputLayout,
-                ArrayLoggerDeref,
-                NumElements
-            ),
-            ret
-        );
-    } else {
-        LOG_MFUN(_,
-            LOG_ARG_TYPE(
-                pInputElementDescs,
-                ArrayLoggerRef,
-                NumElements
-            ),
-            ret
+        new MyID3D10InputLayout(
+            ppInputLayout,
+            pInputElementDescs,
+            NumElements
         );
     }
+    LOG_MFUN(_,
+        LOG_ARG_TYPE(
+            pInputElementDescs,
+            ArrayLoggerRef,
+            NumElements
+        ),
+        LogIf<1>{ret == S_OK},
+        LOG_ARG_TYPE(
+            ppInputLayout,
+            ArrayLoggerDeref,
+            NumElements
+        ),
+        ret
+    );
     return ret;
 }
 
@@ -3421,8 +4111,59 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateVertexShader(
         ppVertexShader
     );
     if (ret == S_OK) {
+        ShaderLogger shader_source{pShaderBytecode};
+        DWORD hash;
+        MurmurHash3_x86_32(
+            pShaderBytecode,
+            BytecodeLength,
+            0,
+            &hash
+        );
+        std::vector<D3D10_SO_DECLARATION_ENTRY> decl_entries;
+        decl_entries.push_back(D3D10_SO_DECLARATION_ENTRY{
+            .SemanticName = "POSITION",
+            .SemanticIndex = 0,
+            .StartComponent = 0,
+            .ComponentCount = 4,
+            .OutputSlot = 0
+        });
+        std::string source = shader_source.source;
+        std::regex texcoord_regex(R"(out\s+vec4\s+vs_TEXCOORD(\d+);)");
+        std::smatch texcoord_sm;
+        while (std::regex_search(
+            source,
+            texcoord_sm,
+            texcoord_regex
+        )) {
+            decl_entries.push_back(D3D10_SO_DECLARATION_ENTRY{
+                .SemanticName = "TEXCOORD",
+                .SemanticIndex = std::stoul(texcoord_sm[1]),
+                .StartComponent = 0,
+                .ComponentCount = 4,
+                .OutputSlot = 0
+            });
+            source = texcoord_sm.suffix();
+        }
+        ID3D10GeometryShader *pGeometryShader;
+        if (impl->inner->CreateGeometryShaderWithStreamOutput(
+            pShaderBytecode,
+            BytecodeLength,
+            decl_entries.data(),
+            decl_entries.size(),
+            sizeof(float) * 4 * decl_entries.size(),
+            &pGeometryShader
+        ) != S_OK)
+            pGeometryShader = NULL;
+        new MyID3D10VertexShader(
+            ppVertexShader,
+            hash,
+            BytecodeLength,
+            shader_source.source,
+            std::move(decl_entries),
+            pGeometryShader
+        );
         LOG_MFUN(_,
-            LOG_ARG_TYPE(pShaderBytecode, ShaderLogger),
+            LOG_ARG(shader_source),
             LOG_ARG(BytecodeLength),
             LOG_ARG(*ppVertexShader),
             ret
@@ -3553,6 +4294,10 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateDepthStencilState(
         ppDepthStencilState
     );
     if (ret == S_OK) {
+        new MyID3D10DepthStencilState(
+            ppDepthStencilState,
+            pDepthStencilDesc
+        );
         LOG_MFUN(_,
             LOG_ARG(pDepthStencilDesc),
             LOG_ARG(*ppDepthStencilState)
@@ -3602,15 +4347,15 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateSamplerState(
                 linear = NULL;
             }
         }
-        LOG_MFUN(_,
-            LOG_ARG(pSamplerDesc),
-            LOG_ARG(*ppSamplerState),
-            ret
-        );
         new MyID3D10SamplerState(
             ppSamplerState,
             pSamplerDesc,
             linear
+        );
+        LOG_MFUN(_,
+            LOG_ARG(pSamplerDesc),
+            LOG_ARG(*ppSamplerState),
+            ret
         );
     } else {
         LOG_MFUN(_,

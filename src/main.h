@@ -6,7 +6,7 @@
 #define ENABLE_SLANG_SHADER 1
 // Custom display resolution seems to work now
 // Custom render resoluton separate from display still broken
-#define ENABLE_CUSTOM_RESOLUTION 1
+#define ENABLE_CUSTOM_RESOLUTION 2
 
 #define UNICODE
 #define _UNICODE
@@ -39,6 +39,7 @@
 #include <codecvt>
 #include <tuple>
 #include <atomic>
+#include <regex>
 
 #define CONCAT_BASE(a, b) a ## b
 #define CONCAT(a, b) CONCAT_BASE(a, b)

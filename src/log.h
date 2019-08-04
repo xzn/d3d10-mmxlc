@@ -31,8 +31,8 @@ struct LogSkip {
 };
 template<size_t N>
 struct LogIf : LogSkip<N> {
-    template<class T, std::enable_if_t<std::is_constructible_v<T, bool>, int> = 0>
-    explicit LogIf(T cond) : LogSkip<N>{!cond} {}
+    template<class T, class = std::enable_if_t<std::is_constructible_v<T, bool>>>
+    explicit LogIf(const T &cond) : LogSkip<N>{!cond} {}
 };
 
 template<class T>
@@ -72,32 +72,50 @@ struct HotkeyLogger {
     std::vector<BYTE> &a;
 };
 
-template<auto TT, class T>
+template<class TT, class T>
 struct ArrayLoggerBase {
+    std::conditional_t<
+        std::is_function_v<TT>,
+        std::add_pointer_t<TT>,
+        TT
+    > tt;
     T *a;
     size_t n;
 };
-template<class T> T deref_ftor(T *a) { return *a; }
+template<class T> T &deref_ftor(T *a) { return *a; }
 template<class T> T *ref_ftor(T *a) { return a; }
-template<class T, class TT> T ctor_ftor(TT *a) { return T(*a); }
-template<class T, class TT> T ctor_ref_ftor(TT *a) { return T(a); }
+template<class T, class... Ts> T ctor_ftor_base(Ts &&... as) {
+    return T(std::forward<Ts>(as)...);
+}
+template<class T, auto TF, class TT, class... Ts>
+struct ctor_ftor {
+    const std::tuple<Ts &&...> as;
+    T operator()(TT *a) const {
+        return std::apply(
+            ctor_ftor_base<T, TT, Ts...>,
+            std::tuple_cat(std::make_tuple(TF(a)), as)
+        );
+    }
+};
+template<class T, class TT, class... Ts>
+using ctor_defer_ftor = ctor_ftor<T, deref_ftor<TT>, TT, Ts...>;
 template<class T>
-ArrayLoggerBase<deref_ftor<T>, T> ArrayLoggerDeref(T *a, size_t n) {
-    return {a, n};
+ArrayLoggerBase<decltype(deref_ftor<T>), T> ArrayLoggerDeref(T *a, size_t n) {
+    return {deref_ftor<T>, a, n};
 }
 template<class T>
-ArrayLoggerBase<ref_ftor<T>, T> ArrayLoggerRef(T *a, size_t n) {
-    return {a, n};
+ArrayLoggerBase<decltype(ref_ftor<T>), T> ArrayLoggerRef(T *a, size_t n) {
+    return {ref_ftor<T>, a, n};
 }
 
-template<class T, class TT>
-ArrayLoggerBase<ctor_ftor<T, TT>, TT> ArrayLoggerCtor(TT *a, size_t n) {
-    return {a, n};
+template<class T, class TT, class... Ts>
+ArrayLoggerBase<ctor_defer_ftor<T, TT>, TT> ArrayLoggerDeref(TT *a, size_t n, Ts &&... as) {
+    return {{std::forward_as_tuple(as...)}, a, n};
 }
 
-template<template<class> class T, class TT>
-auto ArrayLoggerCtor(TT *a, size_t n) {
-    return ArrayLoggerCtor<decltype(T(*a))>(a, n);
+template<template<class> class T, class TT, class... Ts>
+auto ArrayLoggerDeref(TT *a, size_t n, Ts &&... as) {
+    return ArrayLoggerDeref<decltype(T(*a))>(a, n, std::forward<Ts>(as)...);
 }
 
 struct StringLogger {
@@ -178,67 +196,67 @@ class Logger {
     void log_fun_name(LPCSTR n);
     void log_fun_begin();
     template<class T>
-    void log_fun_arg(LPCSTR n, T v) {
+    void log_fun_arg(LPCSTR n, T &&v) {
         log_item(n);
         log_assign();
-        log_item(v);
+        log_item(std::forward<T>(v));
     }
     void log_fun_args();
     template <class T>
-    void log_fun_args(T r) {
-        log_fun_end(r);
+    void log_fun_args(T &&r) {
+        log_fun_end(std::forward<T>(r));
     }
     template<class T, class... Ts>
-    void log_fun_args(LPCSTR n, T v, Ts... as) {
-        log_fun_arg(n, v);
-        log_fun_args_next(as...);
+    void log_fun_args(LPCSTR n, T &&v, Ts &&... as) {
+        log_fun_arg(n, std::forward<T>(v));
+        log_fun_args_next(std::forward<Ts>(as)...);
     }
     void log_fun_args_next();
     template<class T>
-    void log_fun_args_next(T r) {
-        log_fun_args(r);
+    void log_fun_args_next(T &&r) {
+        log_fun_args(std::forward<T>(r));
     }
     template<class... Ts>
-    void log_fun_args_next(LPCSTR n, Ts... as) {
+    void log_fun_args_next(LPCSTR n, Ts &&... as) {
         log_fun_sep();
-        log_fun_args(n, as...);
+        log_fun_args(n, std::forward<Ts>(as)...);
     }
 
     template<size_t N, class T, class... Ts>
-    void log_fun_args(const LogSkip<N> skip, LPCSTR n, T v, Ts... as) {
+    void log_fun_args(const LogSkip<N> skip, LPCSTR n, T &&v, Ts &&... as) {
         if (skip)
-            log_fun_args(*skip, as...);
+            log_fun_args(*skip, std::forward<Ts>(as)...);
         else
-            log_fun_args(n, v, *skip, as...);
+            log_fun_args(n, std::forward<T>(v), *skip, std::forward<Ts>(as)...);
     }
     template<class... Ts>
-    void log_fun_args(const LogSkip<0> skip, Ts... as) {
-        log_fun_args(as...);
+    void log_fun_args(const LogSkip<0> skip, Ts &&... as) {
+        log_fun_args(std::forward<Ts>(as)...);
     }
     template<size_t N, class T, class... Ts>
-    void log_fun_args_next(const LogSkip<N> skip, LPCSTR n, T v, Ts... as) {
+    void log_fun_args_next(const LogSkip<N> skip, LPCSTR n, T &&v, Ts &&... as) {
         if (skip)
-            log_fun_args_next(*skip, as...);
+            log_fun_args_next(*skip, std::forward<Ts>(as)...);
         else
-            log_fun_args_next(n, v, *skip, as...);
+            log_fun_args_next(n, std::forward<T>(v), *skip, std::forward<Ts>(as)...);
     }
     template<class... Ts>
-    void log_fun_args_next(const LogSkip<0> skip, Ts... as) {
-        log_fun_args_next(as...);
+    void log_fun_args_next(const LogSkip<0> skip, Ts &&... as) {
+        log_fun_args_next(std::forward<Ts>(as)...);
     }
 
     void log_fun_sep();
     void log_fun_end();
     template<class T>
-    void log_fun_ret(T v) {
+    void log_fun_ret(T &&v) {
         log_assign();
-        log_item(v);
+        log_item(std::forward<T>(v));
     }
     template<class... Ts>
-    void log_fun_name_begin(LPCSTR n, Ts... as) {
+    void log_fun_name_begin(LPCSTR n, Ts && ... as) {
         log_fun_name(n);
         log_fun_begin();
-        log_fun_args(as...);
+        log_fun_args(std::forward<Ts>(as)...);
     }
     template<class T>
     void log_fun_end(T r) {
@@ -246,6 +264,7 @@ class Logger {
         log_fun_ret(r);
     }
     void log_struct_begin();
+    void log_struct_member_access();
     void log_struct_sep();
     void log_struct_end();
     void log_array_begin();
@@ -316,7 +335,7 @@ class Logger {
         }
     }
 
-    template<auto TT, class T>
+    template<class TT, class T>
     void log_item(ArrayLoggerBase<TT, T> a) {
         if (!a.a) { log_null(); return; }
         log_array_begin();
@@ -327,7 +346,7 @@ class Logger {
             } else {
                 log_array_sep();
             }
-            log_item(TT(t));
+            log_item(a.tt(t));
         }
         log_array_end();
     }
@@ -386,7 +405,7 @@ if constexpr (std::is_enum_v<T>) {
     void log_item(RawStringLogger a);
     void log_item(ByteArrayLogger a);
     void log_item(CharLogger a);
-    void log_item(ShaderLogger a);
+    void log_item(const ShaderLogger &a);
     void log_item(D3D10_CLEAR_Logger a);
     void log_item(D3D10_BIND_Logger a);
     void log_item(D3D10_CPU_ACCESS_Logger a);
@@ -406,7 +425,6 @@ if constexpr (std::is_enum_v<T>) {
     void log_item(const D3D10_TEXTURE1D_DESC *desc);
     void log_item(const D3D10_TEXTURE2D_DESC *desc);
     void log_item(const D3D10_TEXTURE3D_DESC *desc);
-    void log_item(const DXGI_SAMPLE_DESC a);
     void log_item(const DXGI_SAMPLE_DESC *a);
     void log_item(const D3D10_SHADER_RESOURCE_VIEW_DESC *a);
     void log_item(const D3D10_RENDER_TARGET_VIEW_DESC *a);
@@ -441,38 +459,39 @@ if constexpr (std::is_enum_v<T>) {
 
     void log_struct_members();
     template<class T>
-    void log_struct_members(T a) {
-        log_item(a);
+    void log_struct_members(T &&a) {
+        log_item(std::forward<T>(a));
     }
     template<class T, class TT, class... Ts>
-    void log_struct_members(T a, TT aa, Ts... as) {
-        log_struct_members(a);
+    void log_struct_members(T &&a, TT &&aa, Ts &&... as) {
+        log_struct_members(std::forward<T>(a));
         log_struct_sep();
-        log_struct_members(aa, as...);
+        log_struct_members(std::forward<TT>(aa), std::forward<Ts>(as)...);
     }
     template<class... Ts>
-    void log_struct(Ts... as) {
+    void log_struct(Ts &&... as) {
         log_struct_begin();
-        log_struct_members(as...);
+        log_struct_members(std::forward<Ts>(as)...);
         log_struct_end();
     }
     void log_struct_members_named();
     template<class T>
-    void log_struct_members_named(LPCSTR n, T a) {
+    void log_struct_members_named(LPCSTR n, T &&a) {
+        log_struct_member_access();
         log_item(n);
         log_assign();
-        log_item(a);
+        log_item(std::forward<T>(a));
     }
     template<class T, class TT, class... Ts>
-    void log_struct_members_named(LPCSTR n, T a, LPCSTR nn, TT aa, Ts... as) {
-        log_struct_members_named(n, a);
+    void log_struct_members_named(LPCSTR n, T &&a, LPCSTR nn, TT &&aa, Ts &&... as) {
+        log_struct_members_named(n, std::forward<T>(a));
         log_struct_sep();
-        log_struct_members_named(nn, aa, as...);
+        log_struct_members_named(nn, std::forward<TT>(aa), std::forward<Ts>(as)...);
     }
     template<class... Ts>
-    void log_struct_named(Ts... as) {
+    void log_struct_named(Ts &&... as) {
         log_struct_begin();
-        log_struct_members_named(as...);
+        log_struct_members_named(std::forward<Ts>(as)...);
         log_struct_end();
     }
 
@@ -487,9 +506,9 @@ public:
     void next_frame();
 
     template<class... Ts>
-    void log_fun(std::string n, Ts... as) {
+    void log_fun(std::string &&n, Ts &&... as) {
         if (log_begin()) {
-            log_fun_name_begin(n.c_str(), as...);
+            log_fun_name_begin(n.c_str(), std::forward<Ts>(as)...);
             log_end();
         }
     }
@@ -497,29 +516,81 @@ public:
 private:
     template<class T> friend struct LogItem;
     template<class T>
-    void log_item(LogItem<T> a) {
+    void log_item(LogItem<T> &&a) {
         a.log_item(this);
     }
+
+    template<class, class = void>
+    struct LogItem_Ptr : std::false_type {};
     template<class T>
-    auto log_item(const T &a)->decltype(log_item(LogItem<T>{&a})) {
+    struct LogItem_Ptr<
+        T,
+        decltype(LogItem<T>{std::declval<const T *>()}, (void)0)
+    > : std::true_type {};
+    template<class... Ts>
+    static constexpr bool LogItem_Ptr_v = LogItem_Ptr<Ts...>::value;
+
+    template<class T>
+    auto log_item(const T &a)->
+    std::enable_if_t<LogItem_Ptr_v<T>> {
         log_item(LogItem<T>{&a});
-    }
-    template<class T>
-    auto log_item(const T *a)->decltype(log_item(LogItem<T>{a})) {
-        log_item(LogItem<T>{a});
     }
 
     template<class T>
-    auto log_item(const T &a)
-        ->std::enable_if_t<std::is_class_v<T>, decltype(log_item(&a))>
-    {
+    using bare_t = std::remove_cv_t<std::remove_reference_t<T>>;
+
+    template<class, class = void>
+    struct LogItem_RRef : std::false_type {};
+    template<class T>
+    struct LogItem_RRef<
+        T,
+        decltype(LogItem<bare_t<T>>{std::declval<T &&>()}, (void)0)
+    > : std::true_type {};
+    template<class... Ts>
+    static constexpr bool LogItem_RRef_v = LogItem_RRef<Ts...>::value;
+
+    template<class, class = void>
+    struct LogItem_Ref : std::false_type {};
+    template<class T>
+    struct LogItem_Ref<
+        T,
+        decltype(LogItem<bare_t<T>>{std::declval<T &>()}, (void)0)
+    > : std::true_type {};
+    template<class... Ts>
+    static constexpr bool LogItem_Ref_v = !LogItem_RRef_v<Ts...> && LogItem_Ref<Ts...>::value;
+
+    template<class T>
+    auto log_item(T &&a)->std::enable_if_t<LogItem_RRef_v<T>> {
+        log_item(LogItem<bare_t<T>>{std::forward<T>(a)});
+    }
+
+    template<class T>
+    auto log_item(T &&a)->std::enable_if_t<LogItem_Ref_v<T>> {
+        log_item(LogItem<bare_t<T>>{a});
+    }
+
+    template<class, bool = false>
+    struct LogItem_impl : std::false_type {};
+    template<class T>
+    struct LogItem_impl<
+        T,
+        !sizeof(LogItem<bare_t<T>>)
+    > : std::true_type {};
+    template<class... Ts>
+    static constexpr bool LogItem_impl_v = LogItem_impl<Ts...>::value;
+
+    template<
+        class T,
+        class = std::enable_if_t<std::is_class_v<T> && !LogItem_impl_v<T>>
+    >
+    auto log_item(const T &a)->decltype(log_item(&a)) {
         log_item(&a);
     }
 };
 extern Logger *default_logger;
 
-#define LOG_STRUCT_MEMBER(n) "." #n, (STRUCT)->n
-#define LOG_STRUCT_MEMBER_TYPE(n, t, ...) "." #n, t((STRUCT)->n, ## __VA_ARGS__)
+#define LOG_STRUCT_MEMBER(n) #n, (STRUCT)->n
+#define LOG_STRUCT_MEMBER_TYPE(n, t, ...) #n, t((STRUCT)->n, ## __VA_ARGS__)
 #define LOG_ARG(n) #n, n
 #define LOG_ARG_TYPE(n, t, ...) #n, t(n, ## __VA_ARGS__)
 

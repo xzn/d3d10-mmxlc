@@ -56,7 +56,11 @@ MyID3D10SamplerState::~MyID3D10SamplerState() {
     delete impl;
 }
 
-ID3D10SamplerState *MyID3D10SamplerState::get_linear() {
+ID3D10SamplerState *&MyID3D10SamplerState::get_linear() {
+    return impl->linear;
+}
+
+ID3D10SamplerState *MyID3D10SamplerState::get_linear() const {
     return impl->linear;
 }
 

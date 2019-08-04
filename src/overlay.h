@@ -11,13 +11,17 @@ class Overlay {
 
     void push_text_base(std::string &&s);
     template<class T, class... Ts>
-    std::enable_if_t<std::is_convertible_v<T, std::string>> push_text_base(std::string &&s, const T &a, const Ts &... as) {
-        s += std::string(a);
-        push_text_base(std::move(s), as...);
+    std::enable_if_t<std::is_convertible_v<T, std::string>> push_text_base(std::string &&s, T &&a, Ts &&... as) {
+        s += std::string(std::forward<T>(a));
+        push_text_base(std::move(s), std::forward<Ts>(as)...);
     }
     template<class T, class... Ts>
-    std::enable_if_t<std::is_convertible_v<T, std::wstring>> push_text_base(std::string &&s, const T &a, const Ts &... as) {
-        push_text_base(std::move(s), std::wstring_convert<std::codecvt_utf8<wchar_t>>{}.to_bytes(std::wstring(a)), as...);
+    std::enable_if_t<std::is_convertible_v<T, std::wstring>> push_text_base(std::string &&s, T &&a, Ts &&... as) {
+        push_text_base(
+            std::move(s),
+            std::wstring_convert<std::codecvt_utf8<wchar_t>>{}.to_bytes(std::wstring(std::forward<T>(a))),
+            std::forward<Ts>(as)...
+        );
     }
 
 public:
@@ -44,9 +48,9 @@ public:
     );
 
     template<class... Ts>
-    void push_text(Ts &... as) {
+    void push_text(Ts &&... as) {
         std::string s;
-        push_text_base(std::move(s), as...);
+        push_text_base(std::move(s), std::forward<Ts>(as)...);
     }
 };
 

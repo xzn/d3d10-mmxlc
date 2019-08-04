@@ -12,27 +12,47 @@ class MyID3D10Buffer::Impl {
     ID3D10RESOURCE_PRIV
 
     D3D10_MAP map_type = (D3D10_MAP)0;
-    char *buffer = NULL;
-    void *mapped = NULL;
+    char *buffer = NULL; // temp buffer for capturing write
+    void *mapped = NULL; // result of map
+    char *cached = NULL; // local cache (vertex buffer)
+    bool cached_state = false;
     D3D10_BUFFER_DESC desc = {};
 
     Impl(
         ID3D10Buffer **inner,
         const D3D10_BUFFER_DESC *pDesc,
-        UINT64 id
+        UINT64 id,
+        const D3D10_SUBRESOURCE_DATA *pInitialData
     ) :
         IUNKNOWN_INIT(*inner),
         ID3D10RESOURCE_INIT(id),
         desc(*pDesc)
     {
-        buffer =
-            desc.BindFlags == D3D10_BIND_CONSTANT_BUFFER ?
-                new char[desc.ByteWidth] :
-                NULL;
+        switch (desc.BindFlags) {
+            case D3D10_BIND_CONSTANT_BUFFER:
+                buffer = new char[desc.ByteWidth]{};
+                break;
+
+            case D3D10_BIND_INDEX_BUFFER:
+            case D3D10_BIND_VERTEX_BUFFER:
+                cached = new char[desc.ByteWidth]{};
+                if (pInitialData && pInitialData->pSysMem)
+                    memcpy(
+                        cached,
+                        pInitialData->pSysMem,
+                        desc.ByteWidth
+                    );
+                cached_state = true;
+                break;
+
+            default:
+                break;
+        }
     }
 
     ~Impl() {
-        if (buffer) delete buffer;
+        if (buffer) delete[] buffer;
+        if (cached) delete[] cached;
     }
 
     HRESULT Map(
@@ -42,6 +62,9 @@ class MyID3D10Buffer::Impl {
     ) {
         HRESULT ret = inner->Map(MapType, MapFlags, &mapped);
         if (ret == S_OK) {
+            if (cached && MapType != D3D10_MAP_READ)
+                cached_state = false;
+
             if (!LOG_STARTED || !buffer) {
                 *ppData = mapped;
                 goto e_ret;
@@ -115,9 +138,10 @@ e_ret:
 MyID3D10Buffer::MyID3D10Buffer(
     ID3D10Buffer **inner,
     const D3D10_BUFFER_DESC *pDesc,
-    UINT64 id
+    UINT64 id,
+    const D3D10_SUBRESOURCE_DATA *pInitialData
 ) :
-    impl(new Impl(inner, pDesc, id))
+    impl(new Impl(inner, pDesc, id, pInitialData))
 {
     LOG_MFUN(_,
         LOG_ARG(*inner),
@@ -141,6 +165,22 @@ D3D10_BUFFER_DESC &MyID3D10Buffer::get_desc() {
 
 const D3D10_BUFFER_DESC &MyID3D10Buffer::get_desc() const {
     return impl->desc;
+}
+
+char *&MyID3D10Buffer::get_cached() {
+    return impl->cached;
+}
+
+char *MyID3D10Buffer::get_cached() const {
+    return impl->cached;
+}
+
+bool &MyID3D10Buffer::get_cached_state() {
+    return impl->cached_state;
+}
+
+bool MyID3D10Buffer::get_cached_state() const {
+    return impl->cached_state;
 }
 
 HRESULT STDMETHODCALLTYPE MyID3D10Buffer::Map(

@@ -11,7 +11,8 @@ class MyID3D10SamplerState : public ID3D10SamplerState {
 public:
     ID3D10DEVICECHILD_DECL(ID3D10SamplerState);
 
-    ID3D10SamplerState *get_linear();
+    ID3D10SamplerState *&get_linear();
+    ID3D10SamplerState *get_linear() const;
 
     MyID3D10SamplerState(
         ID3D10SamplerState **inner,

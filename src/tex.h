@@ -13,12 +13,6 @@ struct TextureAndViews {
     ~TextureAndViews();
 };
 
-typedef std::tuple<
-    std::vector<ID3D10ShaderResourceView *>,
-    std::vector<ID3D10SamplerState *>,
-    ID3D10PixelShader *
-> TextureCacheKey;
-
 struct TextureAndDepthViews : TextureAndViews {
     ID3D10Texture2D *tex_ds = NULL;
     ID3D10DepthStencilView *dsv = NULL;

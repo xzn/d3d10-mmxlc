@@ -12,7 +12,8 @@ public:
     MyID3D10Buffer(
         ID3D10Buffer **inner,
         const D3D10_BUFFER_DESC *pDesc,
-        UINT64 id
+        UINT64 id,
+        const D3D10_SUBRESOURCE_DATA *pInitialData
     );
 
     virtual ~MyID3D10Buffer();
@@ -20,6 +21,10 @@ public:
     ID3D10RESOURCE_DECL(ID3D10Buffer)
     D3D10_BUFFER_DESC &get_desc();
     const D3D10_BUFFER_DESC &get_desc() const;
+    bool &get_cached_state();
+    bool get_cached_state() const;
+    char *&get_cached();
+    char *get_cached() const;
 
     virtual HRESULT STDMETHODCALLTYPE Map(
         D3D10_MAP MapType,

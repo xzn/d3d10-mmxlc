@@ -46,7 +46,7 @@ ID3D10DEVICECHILD_IMPL(MyID3D10PixelShader, ID3D10PixelShader)
 
 DWORD MyID3D10PixelShader::get_bytecode_hash() { return impl->bytecode_hash; }
 SIZE_T MyID3D10PixelShader::get_bytecode_length() { return impl->bytecode_length; }
-std::string MyID3D10PixelShader::get_source() { return impl->source; }
+const std::string &MyID3D10PixelShader::get_source() { return impl->source; }
 PIXEL_SHADER_ALPHA_DISCARD MyID3D10PixelShader::get_alpha_discard() { return impl->alpha_discard; }
 
 MyID3D10PixelShader::MyID3D10PixelShader(

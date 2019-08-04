@@ -2,12 +2,10 @@
 #define UNKNOWN_IMPL_H
 
 #define IUNKNOWN_PRIV(b) \
-    b *inner = NULL; \
-    DWORD rc = 0;
+    b *inner = NULL;
 
 #define IUNKNOWN_INIT(n) \
-    inner(n), \
-    rc(1)
+    inner(n)
 
 #define IUNKNOWN_IMPL(d, b) \
     b *&d::get_inner() { \
@@ -35,16 +33,15 @@
     } \
  \
     ULONG STDMETHODCALLTYPE d::AddRef() { \
-        unsigned ret = InterlockedIncrement(&impl->rc); \
+        ULONG ret = impl->inner->AddRef(); \
         LOG_MFUN(_, ret); \
         return ret; \
     } \
  \
     ULONG STDMETHODCALLTYPE d::Release() { \
-        unsigned ret = InterlockedDecrement(&impl->rc); \
+        ULONG ret = impl->inner->Release(); \
         LOG_MFUN(_, ret); \
         if (!ret) { \
-            impl->inner->Release(); \
             delete this; \
         } \
         return ret; \

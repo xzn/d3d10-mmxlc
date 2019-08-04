@@ -284,6 +284,10 @@ void Logger::log_struct_begin() {
     log_item('{');
 }
 
+void Logger::log_struct_member_access() {
+    log_item('.');
+}
+
 void Logger::log_struct_sep() {
     log_sep();
 }
@@ -325,7 +329,8 @@ void Logger::log_null() {
 }
 
 void Logger::log_item(bool a) {
-    oss << a;
+    oss << std::boolalpha << a;
+    oss.flags(std::ios::fmtflags{});
 }
 
 void Logger::log_item(CHAR a) {
@@ -416,7 +421,7 @@ const char *hlslcc_prefix = "HLSLcc_";
     log_item(hlslcc_prefix); \
     log_enum(GLLang_ENUM_MAP, (GLLang)a.lang); \
 } while (0)
-void Logger::log_item(ShaderLogger a) {
+void Logger::log_item(const ShaderLogger &a) {
     log_item("R\"");
     LOG_SHADER_DELIM();
     log_item('(');
@@ -805,10 +810,6 @@ void Logger::log_item(const D3D10_TEXTURE2D_DESC *desc) {
     );
 }
 
-void Logger::log_item(const DXGI_SAMPLE_DESC a) {
-    log_item(&a);
-}
-
 void Logger::log_item(const DXGI_SAMPLE_DESC *a) {
     log_struct_named(
 #define STRUCT a
@@ -1144,7 +1145,7 @@ void Logger::log_item(const D3D10_BLEND_DESC *a) {
         LOG_STRUCT_MEMBER(SrcBlendAlpha),
         LOG_STRUCT_MEMBER(DestBlendAlpha),
         LOG_STRUCT_MEMBER(BlendOpAlpha),
-        LOG_STRUCT_MEMBER_TYPE(RenderTargetWriteMask, ArrayLoggerCtor<NumBinLogger>, 8)
+        LOG_STRUCT_MEMBER_TYPE(RenderTargetWriteMask, ArrayLoggerDeref<NumBinLogger>, 8)
 #undef STRUCT
     );
 }
