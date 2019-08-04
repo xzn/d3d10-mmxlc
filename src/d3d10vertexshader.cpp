@@ -31,17 +31,19 @@ class MyID3D10VertexShader::Impl {
         sogs(pGeometryShader)
     {}
 
-    ~Impl() {}
+    ~Impl() {
+        if (sogs) sogs->Release();
+    }
 };
 
 ID3D10DEVICECHILD_IMPL(MyID3D10VertexShader, ID3D10VertexShader)
 
-DWORD MyID3D10VertexShader::get_bytecode_hash() { return impl->bytecode_hash; }
-SIZE_T MyID3D10VertexShader::get_bytecode_length() { return impl->bytecode_length; }
-const std::string &MyID3D10VertexShader::get_source() { return impl->source; }
+DWORD MyID3D10VertexShader::get_bytecode_hash() const { return impl->bytecode_hash; }
+SIZE_T MyID3D10VertexShader::get_bytecode_length() const { return impl->bytecode_length; }
+const std::string &MyID3D10VertexShader::get_source() const { return impl->source; }
 const std::vector<D3D10_SO_DECLARATION_ENTRY> &
-MyID3D10VertexShader::get_decl_entries() { return impl->decl_entries; }
-ID3D10GeometryShader *MyID3D10VertexShader::get_sogs() { return impl->sogs; }
+MyID3D10VertexShader::get_decl_entries() const { return impl->decl_entries; }
+ID3D10GeometryShader *MyID3D10VertexShader::get_sogs() const { return impl->sogs; }
 
 MyID3D10VertexShader::MyID3D10VertexShader(
     ID3D10VertexShader **inner,

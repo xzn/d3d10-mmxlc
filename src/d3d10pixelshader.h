@@ -19,10 +19,11 @@ class MyID3D10PixelShader : public ID3D10PixelShader {
 public:
     ID3D10DEVICECHILD_DECL(ID3D10PixelShader)
 
-    DWORD get_bytecode_hash();
-    SIZE_T get_bytecode_length();
-    const std::string &get_source();
-    PIXEL_SHADER_ALPHA_DISCARD get_alpha_discard();
+    DWORD get_bytecode_hash() const;
+    SIZE_T get_bytecode_length() const;
+    const std::string &get_source() const;
+    PIXEL_SHADER_ALPHA_DISCARD get_alpha_discard() const;
+    const std::vector<UINT> &get_texcoord_sampler_map() const;
 
     MyID3D10PixelShader(
         ID3D10PixelShader **inner,

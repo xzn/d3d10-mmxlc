@@ -11,11 +11,11 @@ class MyID3D10VertexShader : public ID3D10VertexShader {
 public:
     ID3D10DEVICECHILD_DECL(ID3D10VertexShader)
 
-    DWORD get_bytecode_hash();
-    SIZE_T get_bytecode_length();
-    const std::string &get_source();
-    const std::vector<D3D10_SO_DECLARATION_ENTRY> &get_decl_entries();
-    ID3D10GeometryShader *get_sogs();
+    DWORD get_bytecode_hash() const;
+    SIZE_T get_bytecode_length() const;
+    const std::string &get_source() const;
+    const std::vector<D3D10_SO_DECLARATION_ENTRY> &get_decl_entries() const;
+    ID3D10GeometryShader *get_sogs() const;
 
     MyID3D10VertexShader(
         ID3D10VertexShader **inner,

@@ -42,6 +42,7 @@
 #define PS_HASH_T2 0xc9b117d5
 #define PS_HASH_T3 0x1f4c05ac
 
+#define SO_B_LEN (sizeof(float) * 4 * 4 * 6 * 10)
 #define MAX_SAMPLERS 16
 #define MAX_SHADER_RESOURCES 128
 #define MAX_CONSTANT_BUFFERS 15
@@ -699,6 +700,144 @@ struct LogItem<MyIndexedVertexBuffer_Logger> {
     }
 };
 
+namespace {
+
+struct SOBuffer_Logger {
+    const MyID3D10VertexShader *vs;
+    const MyID3D10PixelShader *ps;
+    const char *data;
+    const MyID3D10ShaderResourceView *const *srvs;
+    const D3D10_VIEWPORT &vp;
+    const UINT64 n;
+};
+
+}
+
+template<>
+struct LogItem<SOBuffer_Logger> {
+    const SOBuffer_Logger& a;
+    void log_item(Logger *l) const {
+        l->log_array_begin();
+        auto data = (const float *)a.data;
+        auto &sampler_map = a.ps->get_texcoord_sampler_map();
+        for (UINT64 i = 0; i < a.n; ++i) {
+            if ((const char *)data >= a.data + SO_B_LEN) break;
+            if (i) l->log_array_sep();
+            l->log_struct_begin();
+            bool sep = false;
+            for (auto &entry : a.vs->get_decl_entries()) {
+                if ((const char *)(data + entry.ComponentCount) >= a.data + SO_B_LEN) {
+                    data += entry.ComponentCount;
+                    break;
+                }
+                if (sep) l->log_struct_sep();
+                sep = true;
+                l->log_item(entry.SemanticName);
+                l->log_struct_member_access();
+                l->log_item(entry.SemanticIndex);
+                l->log_assign();
+
+                UINT width = 0, height = 0;
+                bool w =
+                    entry.StartComponent < 4 &&
+                    entry.ComponentCount + entry.StartComponent >= 4;
+                float d = w ? data[3 - entry.StartComponent] : 0;
+                if (!d) d = 1;
+                bool position =
+                    w && entry.SemanticName == std::string("SV_Position");
+                if (position) {
+                    width = a.vp.Width;
+                    height = a.vp.Height;
+                }
+                bool texcoord =
+                    !position &&
+                        entry.SemanticName == std::string("TEXCOORD");
+                if (texcoord) {
+                    if (entry.SemanticIndex >= sampler_map.size()) {
+                        texcoord = false;
+                    } else {
+                        UINT srv_i = sampler_map[entry.SemanticIndex];
+                        if (srv_i == (UINT)-1) {
+                            texcoord = false;
+                        } else {
+                            l->log_item(srv_i);
+                            auto srv = a.srvs[srv_i];
+                            if (
+                                !srv ||
+                                srv->get_desc().ViewDimension != D3D10_SRV_DIMENSION_TEXTURE2D
+                            ) {
+                                texcoord = false;
+                            } else {
+                                auto tex = (const MyID3D10Texture2D *)srv->get_resource();
+                                width = tex->get_desc().Width;
+                                height = tex->get_desc().Height;
+                            }
+                        }
+                    }
+                }
+                if (width && height) {
+                    l->log_struct_begin();
+                    l->log_item(width);
+                    l->log_struct_sep();
+                    l->log_item(height);
+                    l->log_struct_end();
+                    l->log_struct_member_access();
+                }
+
+                l->log_array_begin();
+                for (
+                    UINT i = 0, c = entry.StartComponent;
+                    i < entry.ComponentCount;
+                    ++i, ++c
+                ) {
+                    if (i) l->log_array_sep();
+                    float v = *data++;
+                    l->log_item(v);
+                    if (c > 1) continue;
+                    if (position) {
+                        switch (c) {
+                            case 0:
+                                l->log_struct_begin();
+                                l->log_item((v / d + 1) / 2 * width - 0.5);
+                                l->log_struct_end();
+                                break;
+
+                            case 1:
+                                l->log_struct_begin();
+                                l->log_item((-v / d + 1) / 2 * height - 0.5);
+                                l->log_struct_end();
+                                break;
+
+                            default:
+                                break;
+                        }
+                    } else if (texcoord) {
+                        switch (c) {
+                            case 0:
+                                l->log_struct_begin();
+                                l->log_item(v * width - 0.5);
+                                l->log_struct_end();
+                                break;
+
+                            case 1:
+                                l->log_struct_begin();
+                                l->log_item(v * height - 0.5);
+                                l->log_struct_end();
+                                break;
+
+                            default:
+                                break;
+                        }
+                    }
+                }
+                l->log_array_end();
+            }
+            l->log_struct_end();
+        }
+        l->log_array_end();
+    }
+};
+
 class MyID3D10Device::Impl {
     friend class MyID3D10Device;
 
@@ -1297,9 +1436,18 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
     friend class LogItem<LinearFilterConditions>;
 
     bool linear_restore = false;
+    bool stream_out = false;
+    bool stream_out_available() {
+        return
+            !cached_gs &&
+            cached_ps && cached_vs && cached_vs->get_sogs() &&
+            so_bt && so_bs && so_q && *cached_pssrvs &&
+            cached_pt == D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+    }
 
     void linear_conditions_begin() {
         linear_restore = false;
+        stream_out = false;
         linear_conditions = {};
         if (!render_linear && !LOG_STARTED) return;
 
@@ -1330,18 +1478,47 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             *sss_inner = ss ? ss->get_inner() : NULL;
         }
         if (
-            render_linear &&
             linear_conditions.alpha_discard ==
                 PIXEL_SHADER_ALPHA_DISCARD::EQUAL
         ) {
-            inner->PSSetSamplers(0, MAX_SAMPLERS, sss);
-            linear_restore = true;
+            if (render_linear) {
+                inner->PSSetSamplers(0, MAX_SAMPLERS, sss);
+                linear_restore = true;
+            }
+            if (LOG_STARTED && stream_out_available()) {
+                inner->GSSetShader(cached_vs->get_sogs());
+                UINT offset = 0;
+                inner->SOSetTargets(1, &so_bt, &offset);
+                so_q->Begin();
+                stream_out = true;
+            }
         }
     }
 
     void linear_conditions_end() {
-        if (linear_restore) {
+        if (linear_restore)
             inner->PSSetSamplers(0, MAX_SAMPLERS, render_pssss);
+        if (stream_out) {
+            inner->GSSetShader(NULL);
+            inner->SOSetTargets(0, NULL, NULL);
+            inner->CopyResource(so_bs, so_bt);
+            void *data = NULL;
+            so_bs->Map(D3D10_MAP_READ, 0, &data);
+            so_q->End();
+            D3D10_QUERY_DATA_SO_STATISTICS stat;
+            while (S_OK != so_q->GetData(&stat, sizeof(stat), 0));
+            SOBuffer_Logger stream_out{
+                .vs = cached_vs,
+                .ps = cached_ps,
+                .data = (const char *)data,
+                .srvs = cached_pssrvs,
+                .vp = cached_vp,
+                .n = stat.NumPrimitivesWritten * 3
+            };
+            LOG_MFUN(_,
+                LOG_ARG(stream_out)
+            );
+            so_bs->Unmap();
         }
     }
 
@@ -1362,6 +1539,8 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
         }
     } cached_size = {}, render_size = {};
 
+    ID3D10Buffer *so_bt = NULL, *so_bs = NULL;
+    ID3D10Query *so_q = NULL;
     MyID3D10PixelShader *cached_ps = NULL;
     MyID3D10VertexShader *cached_vs = NULL;
     ID3D10GeometryShader *cached_gs = NULL;
@@ -1514,6 +1693,25 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
     ) : IUNKNOWN_INIT(*inner)
     {
         resize_buffers(width, height);
+
+if constexpr (ENABLE_LOGGER) {
+        D3D10_BUFFER_DESC bt_desc = {
+            .ByteWidth = SO_B_LEN,
+            .Usage = D3D10_USAGE_DEFAULT,
+            .BindFlags = D3D10_BIND_STREAM_OUTPUT,
+        };
+        this->inner->CreateBuffer(&bt_desc, NULL, &so_bt);
+        D3D10_BUFFER_DESC bs_desc = {
+            .ByteWidth = SO_B_LEN,
+            .Usage = D3D10_USAGE_STAGING,
+            .CPUAccessFlags = D3D10_CPU_ACCESS_READ
+        };
+        this->inner->CreateBuffer(&bs_desc, NULL, &so_bs);
+        D3D10_QUERY_DESC q_desc = {
+            .Query = D3D10_QUERY_SO_STATISTICS
+        };
+        this->inner->CreateQuery(&q_desc, &so_q);
+}
     }
 
     ~Impl() {
@@ -1523,6 +1721,10 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         if (d3d10_snes) my_d3d10_gfx_free(d3d10_snes);
         if (d3d10_psone) my_d3d10_gfx_free(d3d10_psone);
         if (d3d10_3d) my_d3d10_gfx_free(d3d10_3d);
+
+        if (so_bt) so_bt->Release();
+        if (so_bs) so_bs->Release();
+        if (so_q) so_q->Release();
     }
 
     void Draw(
@@ -1530,22 +1732,6 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         UINT StartVertexLocation
     ) {
         set_render_vp();
-        linear_conditions_begin();
-        MyVertexBuffer_Logger vertices = {
-            .input_layout = cached_il,
-            .vertex_buffer = cached_vbs.vertex_buffers[0],
-            .stride = cached_vbs.pStrides[0],
-            .offset = cached_vbs.pOffsets[0],
-            .VertexCount = VertexCount,
-            .StartVertexLocation = StartVertexLocation
-        };
-        LOG_MFUN(_,
-            LogIf<1>{linear_restore},
-            LOG_ARG(vertices),
-            LOG_ARG(VertexCount),
-            LOG_ARG(StartVertexLocation),
-            LOG_ARG(linear_conditions)
-        );
         bool filter_next = false;
         bool filter_ss = false;
         bool filter_ss_snes = false;
@@ -2056,14 +2242,36 @@ end:
                 break;
             }
 
-            default:
+            default: {
 draw_default:
+                linear_conditions_begin();
+                MyVertexBuffer_Logger vertices = {
+                    .input_layout = cached_il,
+                    .vertex_buffer = cached_vbs.vertex_buffers[0],
+                    .stride = cached_vbs.pStrides[0],
+                    .offset = cached_vbs.pOffsets[0],
+                    .VertexCount = VertexCount,
+                    .StartVertexLocation = StartVertexLocation
+                };
+                LOG_MFUN(_,
+                    LogIf<1>{linear_restore},
+                    LOG_ARG(vertices),
+                    LOG_ARG(VertexCount),
+                    LOG_ARG(StartVertexLocation),
+                    LOG_ARG(linear_conditions)
+                );
                 inner->Draw(VertexCount, StartVertexLocation);
+                linear_conditions_end();
+                return;
                 break;
+            }
         }
     }
 done:
-        linear_conditions_end();
+        LOG_MFUN(_,
+            LOG_ARG(VertexCount),
+            LOG_ARG(StartVertexLocation)
+        );
     }
 };
 
@@ -4119,13 +4327,13 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateVertexShader(
             0,
             &hash
         );
+        ID3D10GeometryShader *pGeometryShader = NULL;
         std::vector<D3D10_SO_DECLARATION_ENTRY> decl_entries;
+        HRESULT sogs_ret = 0;
+if constexpr (ENABLE_LOGGER) {
         decl_entries.push_back(D3D10_SO_DECLARATION_ENTRY{
-            .SemanticName = "POSITION",
-            .SemanticIndex = 0,
-            .StartComponent = 0,
+            .SemanticName = "SV_Position",
             .ComponentCount = 4,
-            .OutputSlot = 0
         });
         std::string source = shader_source.source;
         std::regex texcoord_regex(R"(out\s+vec4\s+vs_TEXCOORD(\d+);)");
@@ -4138,22 +4346,21 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateVertexShader(
             decl_entries.push_back(D3D10_SO_DECLARATION_ENTRY{
                 .SemanticName = "TEXCOORD",
                 .SemanticIndex = std::stoul(texcoord_sm[1]),
-                .StartComponent = 0,
                 .ComponentCount = 4,
-                .OutputSlot = 0
             });
             source = texcoord_sm.suffix();
         }
-        ID3D10GeometryShader *pGeometryShader;
-        if (impl->inner->CreateGeometryShaderWithStreamOutput(
+        sogs_ret = impl->inner->CreateGeometryShaderWithStreamOutput(
             pShaderBytecode,
             BytecodeLength,
             decl_entries.data(),
             decl_entries.size(),
             sizeof(float) * 4 * decl_entries.size(),
             &pGeometryShader
-        ) != S_OK)
+        );
+        if (sogs_ret != S_OK)
             pGeometryShader = NULL;
+}
         new MyID3D10VertexShader(
             ppVertexShader,
             hash,
@@ -4163,6 +4370,7 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateVertexShader(
             pGeometryShader
         );
         LOG_MFUN(_,
+            LOG_ARG(sogs_ret),
             LOG_ARG(shader_source),
             LOG_ARG(BytecodeLength),
             LOG_ARG(*ppVertexShader),

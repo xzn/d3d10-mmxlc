@@ -26,6 +26,7 @@ struct LogSkip {
     const bool skip;
     operator bool() const { return skip; }
     LogSkip<N - 1> operator*() const {
+        static_assert(N);
         return {skip};
     }
 };
@@ -222,7 +223,7 @@ class Logger {
         log_fun_args(n, std::forward<Ts>(as)...);
     }
 
-    template<size_t N, class T, class... Ts>
+    template<size_t N, class T, class... Ts, class = std::enable_if_t<N>>
     void log_fun_args(const LogSkip<N> skip, LPCSTR n, T &&v, Ts &&... as) {
         if (skip)
             log_fun_args(*skip, std::forward<Ts>(as)...);
@@ -233,7 +234,7 @@ class Logger {
     void log_fun_args(const LogSkip<0> skip, Ts &&... as) {
         log_fun_args(std::forward<Ts>(as)...);
     }
-    template<size_t N, class T, class... Ts>
+    template<size_t N, class T, class... Ts, class = std::enable_if_t<N>>
     void log_fun_args_next(const LogSkip<N> skip, LPCSTR n, T &&v, Ts &&... as) {
         if (skip)
             log_fun_args_next(*skip, std::forward<Ts>(as)...);
