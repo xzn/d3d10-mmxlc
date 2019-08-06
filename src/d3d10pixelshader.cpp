@@ -39,6 +39,7 @@ class MyID3D10PixelShader::Impl {
             PIXEL_SHADER_ALPHA_DISCARD::NONE
         )
     {
+if constexpr (ENABLE_LOGGER) {
         std::unordered_map<std::string, UINT> tex_is;
         {
             std::string source_next = source;
@@ -81,6 +82,7 @@ class MyID3D10PixelShader::Impl {
                 }
             }
         }
+}
     }
 
     ~Impl() {}

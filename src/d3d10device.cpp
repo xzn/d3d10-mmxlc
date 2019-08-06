@@ -42,7 +42,7 @@
 #define PS_HASH_T2 0xc9b117d5
 #define PS_HASH_T3 0x1f4c05ac
 
-#define SO_B_LEN (sizeof(float) * 4 * 4 * 6 * 10)
+#define SO_B_LEN (sizeof(float) * 4 * 4 * 6 * 100)
 #define MAX_SAMPLERS 16
 #define MAX_SHADER_RESOURCES 128
 #define MAX_CONSTANT_BUFFERS 15
@@ -711,15 +711,65 @@ struct SOBuffer_Logger {
     const UINT64 n;
 };
 
+// From Boost
+template<class T>
+void hash_combine(size_t &s, const T &v) {
+    s ^= std::hash<T>()(v) + 0x9e3779b9 + (s << 6) + (s >> 2);
+}
+
+template<class T, size_t I = std::tuple_size_v<T> - 1>
+struct tuple_hash {
+    static void apply(size_t& s, const T &t) {
+        tuple_hash<T, I - 1>::apply(s, t);
+        hash_combine(s, std::get<I>(t));
+    }
+};
+
+template<class T>
+struct tuple_hash<T, 0>
+{
+    static void apply(size_t &s, const T &t) {
+        hash_combine(s, std::get<0>(t));
+    }
+};
+
+}
+
+namespace std {
+
+template<class... Ts>
+struct hash<tuple<Ts...>> {
+    size_t operator()(const tuple<Ts...> &t) const {
+        size_t s = 0;
+        tuple_hash<tuple<Ts...>>::apply(s, t);
+        return s;
+    }
+};
+
 }
 
 template<>
 struct LogItem<SOBuffer_Logger> {
     const SOBuffer_Logger& a;
+
+    struct Pos {
+        double x = -1;
+        double y = -1;
+        operator bool() const {
+            return x >= 0 && y >= 0;
+        }
+        bool operator<(const Pos &r) const {
+            return
+                std::tie(x, y)
+                < std::tie(r.x, r.y);
+        }
+    };
+
     void log_item(Logger *l) const {
         l->log_array_begin();
         auto data = (const float *)a.data;
         auto &sampler_map = a.ps->get_texcoord_sampler_map();
+        std::unordered_map<std::tuple<std::string, UINT>, std::set<Pos>> coords;
         for (UINT64 i = 0; i < a.n; ++i) {
             if ((const char *)data >= a.data + SO_B_LEN) break;
             if (i) l->log_array_sep();
@@ -783,6 +833,7 @@ struct LogItem<SOBuffer_Logger> {
                     l->log_struct_end();
                     l->log_struct_member_access();
                 }
+                Pos pixel_pos{};
 
                 l->log_array_begin();
                 for (
@@ -797,14 +848,16 @@ struct LogItem<SOBuffer_Logger> {
                     if (position) {
                         switch (c) {
                             case 0:
+                                pixel_pos.x = (v / d + 1) / 2 * width - 0.5;
                                 l->log_struct_begin();
-                                l->log_item((v / d + 1) / 2 * width - 0.5);
+                                l->log_item(pixel_pos.x);
                                 l->log_struct_end();
                                 break;
 
                             case 1:
+                                pixel_pos.y = (-v / d + 1) / 2 * height - 0.5;
                                 l->log_struct_begin();
-                                l->log_item((-v / d + 1) / 2 * height - 0.5);
+                                l->log_item(pixel_pos.y);
                                 l->log_struct_end();
                                 break;
 
@@ -814,14 +867,16 @@ struct LogItem<SOBuffer_Logger> {
                     } else if (texcoord) {
                         switch (c) {
                             case 0:
+                                pixel_pos.x = v * width - 0.5;
                                 l->log_struct_begin();
-                                l->log_item(v * width - 0.5);
+                                l->log_item(pixel_pos.x);
                                 l->log_struct_end();
                                 break;
 
                             case 1:
+                                pixel_pos.y = v * height - 0.5;
                                 l->log_struct_begin();
-                                l->log_item(v * height - 0.5);
+                                l->log_item(pixel_pos.y);
                                 l->log_struct_end();
                                 break;
 
@@ -831,10 +886,42 @@ struct LogItem<SOBuffer_Logger> {
                     }
                 }
                 l->log_array_end();
+
+                if (pixel_pos)
+                    coords[
+                        std::make_tuple(
+                            std::string(entry.SemanticName),
+                            entry.SemanticIndex
+                        )
+                    ].insert(std::move(pixel_pos));
             }
             l->log_struct_end();
         }
         l->log_array_end();
+        l->log_struct_member_access();
+        l->log_struct_begin();
+        bool sep = false;
+        for (auto &item : coords) {
+            if (sep) l->log_struct_sep();
+            sep = true;
+            l->log_item(std::get<0>(item.first));
+            l->log_struct_member_access();
+            l->log_item(std::get<1>(item.first));
+            l->log_assign();
+            l->log_array_begin();
+            bool sep = false;
+            for (auto &pos : item.second) {
+                if (sep) l->log_array_sep();
+                sep = true;
+                l->log_struct_begin();
+                l->log_item(pos.x);
+                l->log_struct_sep();
+                l->log_item(pos.y);
+                l->log_struct_end();
+            }
+            l->log_array_end();
+        }
+        l->log_struct_end();
     }
 };
 
@@ -1515,7 +1602,7 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
                 .vp = cached_vp,
                 .n = stat.NumPrimitivesWritten * 3
             };
-            LOG_MFUN(_,
+            LOG_FUN(_,
                 LOG_ARG(stream_out)
             );
             so_bs->Unmap();

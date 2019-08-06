@@ -598,7 +598,7 @@ extern Logger *default_logger;
 #if ENABLE_LOGGER
 
 #define LOG_STARTED ((LOGGER)->get_started())
-#define LOG_FUN(_, ...) do { if LOG_STARTED (LOGGER)->log_fun(__func__, ## __VA_ARGS__); } while (0)
+#define LOG_FUN(_, ...) do { if LOG_STARTED (LOGGER)->log_fun(std::string(__FILE__) + ":" + __func__, ## __VA_ARGS__); } while (0)
 #define LOG_MFUN_DEF(n, ...) do { if LOG_STARTED (LOGGER)->log_fun(std::string(#n "::") + __func__, LOG_ARG(this), ## __VA_ARGS__); } while (0)
 
 #else
