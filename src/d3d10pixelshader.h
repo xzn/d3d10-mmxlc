@@ -24,6 +24,7 @@ public:
     const std::string &get_source() const;
     PIXEL_SHADER_ALPHA_DISCARD get_alpha_discard() const;
     const std::vector<UINT> &get_texcoord_sampler_map() const;
+    const std::vector<std::tuple<std::string, std::string>> &get_uniform_list() const;
 
     MyID3D10PixelShader(
         ID3D10PixelShader **inner,

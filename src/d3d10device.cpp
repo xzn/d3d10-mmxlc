@@ -619,24 +619,28 @@ struct LogItem<MyVertexBuffer_Logger> {
     const MyVertexBuffer_Logger *a;
     void log_item(Logger *l) const {
         l->log_struct_begin();
-        l->log_struct_members_named(
-            "vb_cached_state", a->vertex_buffer->get_cached_state()
-        );
-        if (auto cached = a->vertex_buffer->get_cached()) {
-            l->log_struct_sep();
-            l->log_item("vb_cached");
-            l->log_assign();
-            l->log_array_begin();
+        auto vb_cached_state = a->vertex_buffer->get_cached_state();
+        if (vb_cached_state) {
+            if (auto cached = a->vertex_buffer->get_cached()) {
+                l->log_struct_sep();
+                l->log_item("vb_cached");
+                l->log_assign();
+                l->log_array_begin();
 
-            cached += a->offset + a->stride * a->StartVertexLocation;
-            for (UINT i = 0; i < a->VertexCount; ++i, cached += a->stride) {
-                if (i) l->log_array_sep();
-                l->log_item(
-                    MyVertexBufferElement_Logger{cached, a->input_layout}
-                );
+                cached += a->offset + a->stride * a->StartVertexLocation;
+                for (UINT i = 0; i < a->VertexCount; ++i, cached += a->stride) {
+                    if (i) l->log_array_sep();
+                    l->log_item(
+                        MyVertexBufferElement_Logger{cached, a->input_layout}
+                    );
+                }
+
+                l->log_array_end();
             }
-
-            l->log_array_end();
+        } else {
+            l->log_struct_members_named(
+                LOG_ARG(vb_cached_state)
+            );
         }
         l->log_struct_end();
     }
@@ -660,41 +664,46 @@ struct LogItem<MyIndexedVertexBuffer_Logger> {
     const MyIndexedVertexBuffer_Logger *a;
     void log_item(Logger *l) const {
         l->log_struct_begin();
-        l->log_struct_members_named(
-            "vb_cached_state", a->vertex_buffer->get_cached_state(),
-            "ib_cached_state", a->index_buffer->get_cached_state()
-        );
-        auto vb_cached = a->vertex_buffer->get_cached();
-        auto ib_cached = a->index_buffer->get_cached();
-        if (ib_cached) {
-            l->log_struct_sep();
-            l->log_item("vb_cached");
-            l->log_assign();
-            l->log_array_begin();
+        auto vb_cached_state = a->vertex_buffer->get_cached_state();
+        auto ib_cached_state = a->index_buffer->get_cached_state();
+        if (vb_cached_state && ib_cached_state) {
+            auto vb_cached = a->vertex_buffer->get_cached();
+            auto ib_cached = a->index_buffer->get_cached();
+            if (ib_cached) {
+                l->log_struct_sep();
+                l->log_item("vb_cached");
+                l->log_assign();
+                l->log_array_begin();
 
-            bool ib_32 = a->index_format == DXGI_FORMAT_R32_UINT;
-            if (ib_32 || a->index_format == DXGI_FORMAT_R16_UINT) {
-                vb_cached +=
-                    a->offset + a->stride * a->BaseVertexLocation;
-                ib_cached +=
-                    a->index_offset +
-                    (ib_32 ? sizeof(UINT32) : sizeof(UINT16)) *
-                        a->StartIndexLocation;
-                for (UINT i = 0; i < a->IndexCount; ++i) {
-                    if (i) l->log_array_sep();
-                    UINT vb_i = ib_32 ?
-                        ((UINT32 *)ib_cached)[i] :
-                        ((UINT16 *)ib_cached)[i];
-                    l->log_item(
-                        MyVertexBufferElement_Logger{
-                            vb_cached + a->stride * vb_i,
-                            a->input_layout
-                        }
-                    );
+                bool ib_32 = a->index_format == DXGI_FORMAT_R32_UINT;
+                if (ib_32 || a->index_format == DXGI_FORMAT_R16_UINT) {
+                    vb_cached +=
+                        a->offset + a->stride * a->BaseVertexLocation;
+                    ib_cached +=
+                        a->index_offset +
+                        (ib_32 ? sizeof(UINT32) : sizeof(UINT16)) *
+                            a->StartIndexLocation;
+                    for (UINT i = 0; i < a->IndexCount; ++i) {
+                        if (i) l->log_array_sep();
+                        UINT vb_i = ib_32 ?
+                            ((UINT32 *)ib_cached)[i] :
+                            ((UINT16 *)ib_cached)[i];
+                        l->log_item(
+                            MyVertexBufferElement_Logger{
+                                vb_cached + a->stride * vb_i,
+                                a->input_layout
+                            }
+                        );
+                    }
                 }
-            }
 
-            l->log_array_end();
+                l->log_array_end();
+            }
+        } else {
+            l->log_struct_members_named(
+                LOG_ARG(vb_cached_state),
+                LOG_ARG(ib_cached_state)
+            );
         }
         l->log_struct_end();
     }
@@ -709,6 +718,11 @@ struct SOBuffer_Logger {
     const MyID3D10ShaderResourceView *const *srvs;
     const D3D10_VIEWPORT &vp;
     const UINT64 n;
+};
+
+struct ConstantBuffer_Logger {
+    const std::vector<std::tuple<std::string, std::string>> &uniform_list;
+    const MyID3D10Buffer *const *pscbs;
 };
 
 // From Boost
@@ -922,6 +936,19 @@ struct LogItem<SOBuffer_Logger> {
             l->log_array_end();
         }
         l->log_struct_end();
+    }
+};
+
+template<>
+struct LogItem<ConstantBuffer_Logger> {
+    const ConstantBuffer_Logger& a;
+    void log_item(Logger *l) const {
+        l->log_array_begin();
+        for (auto &item : a.uniform_list) {
+            auto type = std::get<0>(item);
+            auto name = std::get<1>(item);
+        }
+        l->log_array_end();
     }
 };
 
@@ -1602,8 +1629,13 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
                 .vp = cached_vp,
                 .n = stat.NumPrimitivesWritten * 3
             };
+            ConstantBuffer_Logger ps_constant_buffer{
+                .uniform_list = cached_ps->get_uniform_list(),
+                .pscbs = cached_pscbs,
+            };
             LOG_FUN(_,
-                LOG_ARG(stream_out)
+                LOG_ARG(stream_out),
+                LOG_ARG(ps_constant_buffer)
             );
             so_bs->Unmap();
         }
@@ -1659,7 +1691,8 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
     MyID3D10Buffer *cached_ib = NULL;
     DXGI_FORMAT cached_ib_format = DXGI_FORMAT_UNKNOWN;
     UINT cached_ib_offset = 0;
-    ID3D10Buffer *cached_pscbs[MAX_CONSTANT_BUFFERS] = {};
+    ID3D10Buffer *render_pscbs[MAX_CONSTANT_BUFFERS] = {};
+    MyID3D10Buffer *cached_pscbs[MAX_CONSTANT_BUFFERS] = {};
     ID3D10Buffer *cached_vscbs[MAX_CONSTANT_BUFFERS] = {};
     UINT render_width = 0;
     UINT render_height = 0;
@@ -1840,7 +1873,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
             inner->RSSetViewports(1, &render_vp);
         };
         auto restore_pscbs = [this] {
-            inner->PSSetConstantBuffers(0, 1, cached_pscbs);
+            inner->PSSetConstantBuffers(0, MAX_CONSTANT_BUFFERS, render_pscbs);
         };
         auto restore_rtvs = [this] {
             inner->OMSetRenderTargets(
@@ -2104,11 +2137,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
                 cached_bs.BlendFactor,
                 cached_bs.SampleMask
             );
-            inner->PSSetConstantBuffers(
-                0,
-                MAX_CONSTANT_BUFFERS,
-                cached_pscbs
-            );
+            restore_pscbs();
             inner->VSSetConstantBuffers(
                 0,
                 MAX_CONSTANT_BUFFERS,
@@ -2707,8 +2736,13 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetConstantBuffers(
     }
     if (NumBuffers) {
         memcpy(
-            impl->cached_pscbs + StartSlot,
+            impl->render_pscbs + StartSlot,
             buffers,
+            sizeof(void *) * NumBuffers
+        );
+        memcpy(
+            impl->cached_pscbs + StartSlot,
+            constant_buffers,
             sizeof(void *) * NumBuffers
         );
     }
@@ -3200,12 +3234,44 @@ void STDMETHODCALLTYPE MyID3D10Device::CopySubresourceRegion(
     switch (dstType) {
         case D3D10_RESOURCE_DIMENSION_BUFFER: {
             auto buffer = (MyID3D10Buffer *)pDstResource;
-            if (buffer->get_cached())
-                buffer->get_cached_state() = false;
+            auto buffer_src = (MyID3D10Buffer *)pSrcResource;
+            if (buffer->get_cached()) {
+                if (buffer_src->get_cached() && buffer_src->get_cached_state()) {
+                    if (pSrcBox) {
+                        if (
+                            buffer->get_cached_state() &&
+                            pSrcBox->left < pSrcBox->right &&
+                            pSrcBox->top < pSrcBox->bottom &&
+                            pSrcBox->front < pSrcBox->back
+                        ) {
+                            memcpy(
+                                buffer->get_cached() + DstX,
+                                buffer_src->get_cached() + pSrcBox->left,
+                                std::min(
+                                    pSrcBox->right,
+                                    buffer_src->get_desc().ByteWidth
+                                ) - pSrcBox->left
+                            );
+                        }
+                    } else {
+                        memcpy(
+                            buffer->get_cached(),
+                            buffer_src->get_cached(),
+                            std::min(
+                                buffer->get_desc().ByteWidth,
+                                buffer_src->get_desc().ByteWidth
+                            )
+                        );
+                        buffer->get_cached_state() = true;
+                    }
+                } else {
+                    buffer->get_cached_state() = false;
+                }
+            }
             pDstResource =
                 buffer->get_inner();
             pSrcResource =
-                ((MyID3D10Buffer *)pSrcResource)->get_inner();
+                buffer_src->get_inner();
             break;
         }
 
@@ -3297,12 +3363,26 @@ void STDMETHODCALLTYPE MyID3D10Device::CopyResource(
     switch (dstType) {
         case D3D10_RESOURCE_DIMENSION_BUFFER: {
             auto buffer = (MyID3D10Buffer *)pDstResource;
-            if (buffer->get_cached())
-                buffer->get_cached_state() = false;
+            auto buffer_src = (MyID3D10Buffer *)pSrcResource;
+            if (buffer->get_cached()) {
+                if (
+                    buffer_src->get_cached() && buffer_src->get_cached_state() &&
+                    buffer->get_desc().ByteWidth == buffer_src->get_desc().ByteWidth
+                ) {
+                    memcpy(
+                        buffer->get_cached(),
+                        buffer_src->get_cached(),
+                        buffer->get_desc().ByteWidth
+                    );
+                    buffer->get_cached_state() = true;
+                } else {
+                    buffer->get_cached_state() = false;
+                }
+            }
             pDstResource =
                 buffer->get_inner();
             pSrcResource =
-                ((MyID3D10Buffer *)pSrcResource)->get_inner();
+                buffer_src->get_inner();
             break;
         }
 
@@ -3346,51 +3426,39 @@ void STDMETHODCALLTYPE MyID3D10Device::UpdateSubresource(
 ) {
     D3D10_RESOURCE_DIMENSION dstType;
     pDstResource->GetType(&dstType);
-    UINT ByteWidth = 0;
     ID3D10Resource *resource_inner;
     int tex_type = 0;
     switch (dstType) {
         case D3D10_RESOURCE_DIMENSION_BUFFER: {
             auto buffer = (MyID3D10Buffer *)pDstResource;
-            switch (buffer->get_desc().BindFlags) {
-                case D3D10_BIND_CONSTANT_BUFFER:
-                    ByteWidth = buffer->get_desc().ByteWidth;
-                    break;
-
-                case D3D10_BIND_INDEX_BUFFER:
-                case D3D10_BIND_VERTEX_BUFFER:
-                    if (!buffer->get_cached()) break;
-                    if (pDstBox) {
-                        if (
-                            pSrcData &&
-                            pDstBox->left < pDstBox->right &&
-                            pDstBox->top < pDstBox->bottom &&
-                            pDstBox->front < pDstBox->back
-                        ) {
-                            memcpy(
-                                buffer->get_cached() +
-                                    pDstBox->left,
-                                pSrcData,
-                                std::min(
-                                    pDstBox->right - pDstBox->left,
-                                    buffer->get_desc().ByteWidth -
-                                        pDstBox->left
-                                )
-                            );
-                        }
-                    } else {
-                        if (pSrcData) {
-                            memcpy(
-                                buffer->get_cached(),
-                                pSrcData,
+            if (buffer->get_cached()) {
+                if (pDstBox) {
+                    if (
+                        buffer->get_cached_state() && pSrcData &&
+                        pDstBox->left < pDstBox->right &&
+                        pDstBox->top < pDstBox->bottom &&
+                        pDstBox->front < pDstBox->back
+                    ) {
+                        memcpy(
+                            buffer->get_cached() +
+                                pDstBox->left,
+                            pSrcData,
+                            std::min(
+                                pDstBox->right,
                                 buffer->get_desc().ByteWidth
-                            );
-                        }
+                            ) - pDstBox->left
+                        );
                     }
-                    break;
-
-                default:
-                    break;
+                } else {
+                    if (pSrcData) {
+                        memcpy(
+                            buffer->get_cached(),
+                            pSrcData,
+                            buffer->get_desc().ByteWidth
+                        );
+                        buffer->get_cached_state() = true;
+                    }
+                }
             }
             resource_inner = buffer->get_inner();
             break;
@@ -3434,33 +3502,15 @@ void STDMETHODCALLTYPE MyID3D10Device::UpdateSubresource(
             resource_inner = NULL;
             break;
     }
-    if (ByteWidth) {
-        LOG_MFUN(_,
-            LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
-            LOG_ARG(DstSubresource),
-            LOG_ARG(pDstBox),
-            LOG_ARG_TYPE(pSrcData, ByteArrayLogger, ByteWidth),
-            LOG_ARG(SrcRowPitch),
-            LOG_ARG(SrcDepthPitch)
-        );
-    } else if (tex_type) {
-        LOG_MFUN(_,
-            LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
-            LOG_ARG(tex_type),
-            LOG_ARG(DstSubresource),
-            LOG_ARG(pDstBox),
-            LOG_ARG(SrcRowPitch),
-            LOG_ARG(SrcDepthPitch)
-        );
-    } else {
-        LOG_MFUN(_,
-            LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
-            LOG_ARG(DstSubresource),
-            LOG_ARG(pDstBox),
-            LOG_ARG(SrcRowPitch),
-            LOG_ARG(SrcDepthPitch)
-        );
-    }
+    LOG_MFUN(_,
+        LOG_ARG_TYPE(pDstResource, MyID3D10Resource_Logger),
+        LogIf<1>{tex_type},
+        LOG_ARG(tex_type),
+        LOG_ARG(DstSubresource),
+        LOG_ARG(pDstBox),
+        LOG_ARG(SrcRowPitch),
+        LOG_ARG(SrcDepthPitch)
+    );
     impl->inner->UpdateSubresource(
         resource_inner,
         DstSubresource,
@@ -4060,24 +4110,11 @@ HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateBuffer(
             xorshift128p(),
             pInitialData
         );
-        if (pDesc->BindFlags == D3D10_BIND_CONSTANT_BUFFER) {
-            LOG_MFUN(_,
-                LOG_ARG(pDesc),
-                LOG_ARG_TYPE(
-                    pInitialData,
-                    D3D10_SUBRESOURCE_DATA_Logger,
-                    pDesc->ByteWidth
-                ),
-                LOG_ARG(*ppBuffer),
-                ret
-            );
-        } else {
-            LOG_MFUN(_,
-                LOG_ARG(pDesc),
-                LOG_ARG(*ppBuffer),
-                ret
-            );
-        }
+        LOG_MFUN(_,
+            LOG_ARG(pDesc),
+            LOG_ARG(*ppBuffer),
+            ret
+        );
     } else {
         LOG_MFUN(_,
             LOG_ARG(pDesc),

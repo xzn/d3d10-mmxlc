@@ -15,6 +15,7 @@ class MyID3D10PixelShader::Impl {
     PIXEL_SHADER_ALPHA_DISCARD alpha_discard =
         PIXEL_SHADER_ALPHA_DISCARD::UNKNOWN;
     std::vector<UINT> texcoord_sampler_map;
+    std::vector<std::tuple<std::string, std::string>> uniform_list;
 
     Impl(
         ID3D10PixelShader **inner,
@@ -43,17 +44,32 @@ if constexpr (ENABLE_LOGGER) {
         std::unordered_map<std::string, UINT> tex_is;
         {
             std::string source_next = source;
-            std::regex sampler_regex(R"(uniform\s+sampler2D\s+(\w+);)");
-            std::smatch sampler_sm;
+            std::regex uniform_regex(R"(uniform\s+(\w+)\s+(\w+);)");
+            std::smatch uniform_sm;
             UINT i = 0;
             while (std::regex_search(
                 source_next,
-                sampler_sm,
-                sampler_regex
+                uniform_sm,
+                uniform_regex
             )) {
-                tex_is.emplace(sampler_sm[1], i);
-                source_next = sampler_sm.suffix();
-                ++i;
+                uniform_list.emplace_back(uniform_sm[1], uniform_sm[2]);
+
+                std::regex sampler_regex(R"(\w*sampler\w+)");
+                std::smatch sampler_sm;
+                std::string type = uniform_sm[1];
+                if (std::regex_search(
+                    type,
+                    sampler_sm,
+                    sampler_regex
+                )) {
+                    tex_is.emplace(
+                        uniform_sm[2],
+                        sampler_sm[0] == "sampler2D" ? i : -1
+                    );
+                    ++i;
+                }
+
+                source_next = uniform_sm.suffix();
             }
         }
         for (UINT i = 0;; ++i) {
@@ -96,6 +112,8 @@ const std::string &MyID3D10PixelShader::get_source() const { return impl->source
 PIXEL_SHADER_ALPHA_DISCARD MyID3D10PixelShader::get_alpha_discard() const { return impl->alpha_discard; }
 const std::vector<UINT> &
 MyID3D10PixelShader::get_texcoord_sampler_map() const { return impl->texcoord_sampler_map; }
+const std::vector<std::tuple<std::string, std::string>> &
+MyID3D10PixelShader::get_uniform_list() const { return impl->uniform_list; }
 
 MyID3D10PixelShader::MyID3D10PixelShader(
     ID3D10PixelShader **inner,

@@ -12,9 +12,8 @@ class MyID3D10Buffer::Impl {
     ID3D10RESOURCE_PRIV
 
     D3D10_MAP map_type = (D3D10_MAP)0;
-    char *buffer = NULL; // temp buffer for capturing write
     void *mapped = NULL; // result of map
-    char *cached = NULL; // local cache (vertex buffer)
+    char *cached = NULL; // local cache
     bool cached_state = false;
     D3D10_BUFFER_DESC desc = {};
 
@@ -30,9 +29,6 @@ class MyID3D10Buffer::Impl {
     {
         switch (desc.BindFlags) {
             case D3D10_BIND_CONSTANT_BUFFER:
-                buffer = new char[desc.ByteWidth]{};
-                break;
-
             case D3D10_BIND_INDEX_BUFFER:
             case D3D10_BIND_VERTEX_BUFFER:
                 cached = new char[desc.ByteWidth]{};
@@ -51,7 +47,6 @@ class MyID3D10Buffer::Impl {
     }
 
     ~Impl() {
-        if (buffer) delete[] buffer;
         if (cached) delete[] cached;
     }
 
@@ -62,64 +57,50 @@ class MyID3D10Buffer::Impl {
     ) {
         HRESULT ret = inner->Map(MapType, MapFlags, &mapped);
         if (ret == S_OK) {
-            if (cached && MapType != D3D10_MAP_READ)
-                cached_state = false;
-
-            if (!LOG_STARTED || !buffer) {
-                *ppData = mapped;
-                goto e_ret;
-            }
-
             map_type = MapType;
-            bool read = false;
-            switch (map_type) {
-                case D3D10_MAP_WRITE_DISCARD:
-                    memset(buffer, 0, desc.ByteWidth);
-                    *ppData = buffer;
-                    break;
+            if (!LOG_STARTED || !cached) {
+                *ppData = mapped;
+                mapped = NULL;
+            } else {
+                switch (map_type) {
+                    case D3D10_MAP_WRITE_DISCARD:
+                        memset(cached, 0, desc.ByteWidth);
+                        *ppData = cached;
+                        break;
 
-                case D3D10_MAP_READ_WRITE:
-                case D3D10_MAP_READ:
-                    memcpy(buffer, mapped, desc.ByteWidth);
-                    read = true;
-                    *ppData = buffer;
-                    break;
+                    case D3D10_MAP_READ_WRITE:
+                    case D3D10_MAP_READ:
+                        memcpy(cached, mapped, desc.ByteWidth);
+                        *ppData = cached;
+                        break;
 
-                case D3D10_MAP_WRITE:
-                case D3D10_MAP_WRITE_NO_OVERWRITE:
-                default:
-                    *ppData = mapped;
-                    break;
+                    case D3D10_MAP_WRITE:
+                    case D3D10_MAP_WRITE_NO_OVERWRITE:
+                    default:
+                        *ppData = mapped;
+                        cached_state = false;
+                        mapped = NULL;
+                        break;
+                }
             }
-            if (!read) goto e_ret;
-            LOG_MFUN(_,
-                LOG_ARG(MapType),
-                LOG_ARG_TYPE(MapFlags, D3D10_MAP_FLAG),
-                LOG_ARG_TYPE(*ppData, ByteArrayLogger, desc.ByteWidth),
-                ret
-            );
-        } else {
-e_ret:
-            LOG_MFUN(_,
-                LOG_ARG(MapType),
-                LOG_ARG_TYPE(MapFlags, D3D10_MAP_FLAG),
-                ret
-            );
-            map_type = D3D10_MAP_WRITE_NO_OVERWRITE;
         }
+        LOG_MFUN(_,
+            LOG_ARG(MapType),
+            LOG_ARG_TYPE(MapFlags, D3D10_MAP_FLAG),
+            ret
+        );
         return ret;
     }
 
     void Unmap(
     ) {
+        LOG_MFUN();
         switch (map_type) {
             case D3D10_MAP_WRITE_DISCARD:
             case D3D10_MAP_READ_WRITE:
-                if (buffer) {
-                    memcpy(mapped, buffer, desc.ByteWidth);
-                    LOG_MFUN(_,
-                        LOG_ARG_TYPE(buffer, ByteArrayLogger, desc.ByteWidth)
-                    );
+                if (cached && mapped) {
+                    memcpy(mapped, cached, desc.ByteWidth);
+                    cached_state = true;
                     break;
                 }
                 /* fall-through */
@@ -128,7 +109,7 @@ e_ret:
             case D3D10_MAP_WRITE:
             case D3D10_MAP_WRITE_NO_OVERWRITE:
             default:
-                LOG_MFUN();
+                mapped = NULL;
                 break;
         }
         inner->Unmap();
