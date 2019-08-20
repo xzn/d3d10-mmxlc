@@ -6,7 +6,7 @@
 #define ENABLE_SLANG_SHADER 1
 // Custom display resolution seems to work now
 // Custom render resoluton separate from display still broken
-#define ENABLE_CUSTOM_RESOLUTION 2
+#define ENABLE_CUSTOM_RESOLUTION 1
 
 #define UNICODE
 #define _UNICODE

@@ -1,3 +1,6 @@
+#ifdef HAVE_SLANG
+#undef HAVE_SLANG
+#endif
 #include "RetroArch/retroarch.c"
 #include "retroarch.h"
 
