@@ -73,8 +73,11 @@ retroarch_base_ln := RetroArch/gfx/drivers/d3d10_base.c
 retroarch_hdr := RetroArch/gfx/common/d3d10_common.h RetroArch/gfx/common/d3dcompiler_common.h
 retroarch_hdr_src := $(retroarch_hdr:RetroArch/%.h=RetroArch/RetroArch/%.h)
 retroarch_hdr_sen := obj/RetroArch/.retroarch_hdr_sen
+retroarch_mod := RetroArch/gfx/drivers_shader/slang_reflection.cpp
+retroarch_mod_src := $(retroarch_mod:RetroArch/%.cpp=RetroArch/RetroArch/%.cpp)
+retroarch_mod_sen := obj/RetroArch/.retroarch_mod_sen
 
-prep_src := $(glslang_ln) $(retroarch_ln) $(retroarch_hdr) $(retroarch_hdr_sen) $(retroarch_base_ln)
+prep_src := $(glslang_ln) $(retroarch_ln) $(retroarch_hdr) $(retroarch_hdr_sen) $(retroarch_base_ln) $(retroarch_mod) $(retroarch_mod_sen)
 prep: $(prep_src)
 dll: $(dll) $(dll_dbg)
 
@@ -96,6 +99,12 @@ $(retroarch_base_ln): RetroArch/%_base.c: RetroArch/RetroArch/%.c
 $(retroarch_hdr): $(retroarch_hdr_sen)
 $(retroarch_hdr_sen): RetroArch/gfx/common/common.diff | $(retroarch_hdr_src) $(retroarch_dir)
 	cp $(retroarch_hdr_src) $(<D)
+	patch -d $(<D) -p 0 -i $(<F)
+	touch $@
+
+$(retroarch_mod): $(retroarch_mod_sen)
+$(retroarch_mod_sen): RetroArch/gfx/drivers_shader/slang_reflection.diff | $(retroarch_mod_src) $(retroarch_dir)
+	cp $(retroarch_mod_src) $(<D)
 	patch -d $(<D) -p 0 -i $(<F)
 	touch $@
 
@@ -131,6 +140,9 @@ obj/RetroArch/%.o: RetroArch/%.c | $(retroarch_dir)
 
 obj/RetroArch/%.o: RetroArch/RetroArch/%.c | $(retroarch_dir)
 	$(retroarch_cc) -DHAVE_DYNAMIC
+
+obj/RetroArch/%.o: RetroArch/%.cpp | $(retroarch_dir)
+	$(retroarch_cxx) -IRetroArch/RetroArch/gfx/drivers_shader
 
 obj/RetroArch/%.o: RetroArch/RetroArch/%.cpp | $(retroarch_dir)
 	$(retroarch_cxx)
