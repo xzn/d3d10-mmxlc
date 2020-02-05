@@ -27,7 +27,7 @@ glslang_src := $(wildcard glslang/glslang/glslang/GenericCodeGen/*.cpp) $(wildca
 glslang_obj := $(glslang_src:glslang/glslang/%.cpp=obj/glslang/%.o)
 glslang_dir := $(sort $(dir $(glslang_obj)))
 retroarch_fun = $(shell make -f RetroArch/RetroArch/Makefile.common $$'--eval=_print-var:\n\t@echo $$($1)' _print-var $(retroarch_def))
-retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_D3D10=1 HAVE_SLANG=1 HAVE_BUILTINZLIB=1 HAVE_RTGA=1 HAVE_RPNG=1 HAVE_RJPEG=1 HAVE_RBMP=1
+retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_LANGEXTRA=1 HAVE_D3D10=1 HAVE_SLANG=1 HAVE_BUILTINZLIB=1 HAVE_RTGA=1 HAVE_RPNG=1 HAVE_RJPEG=1 HAVE_RBMP=1
 # retroarch_def += HAVE_DINPUT=1 HAVE_GDI=1 HAVE_MENU=1
 retroarch_obj := $(call retroarch_fun,OBJ) deps/glslang/glslang.o
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
@@ -58,7 +58,7 @@ ifeq ($(o3),0)
 	lto := 0
 	dll_dbg := $(dll:%.dll=%.dbg)
 else
-	o3_opt := -O3 -DNDEBUG -s
+	o3_opt := -O2 -DNDEBUG -s
 endif
 
 ifeq ($(lto),0)
@@ -121,7 +121,7 @@ obj/SPIRV-Cross/%.o: SPIRV-Cross/%.cpp | $(spirv_dir)
 	$(cxx_all)
 
 obj/glslang/%.o: glslang/glslang/%.cpp | $(glslang_dir)
-	$(cxx_all) -DENABLE_HLSL
+	$(cxx_all) -DENABLE_HLSL -Iglslang/glslang
 
 obj/RetroArch/gfx/common/d3d10_common.o : RetroArch/gfx/common/d3d10_common.c | $(retroarch_dir)
 	$(retroarch_cc) -IRetroArch/RetroArch/gfx/common
@@ -136,7 +136,7 @@ obj/RetroArch/%.o: RetroArch/RetroArch/%.cpp | $(retroarch_dir)
 	$(retroarch_cxx)
 
 obj/RetroArch/deps/glslang/glslang.o: glslang/glslang.cpp | $(retroarch_dir)
-	$(retroarch_cxx) -IRetroArch/RetroArch/deps/glslang
+	$(retroarch_cxx) -IRetroArch/RetroArch/deps/glslang -Iglslang/glslang
 
 obj/RetroArch/%.o: RetroArch/RetroArch/%.rc | $(retroarch_dir)
 	$(cross_prefix)windres -o $@ $<

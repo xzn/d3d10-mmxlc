@@ -11,6 +11,8 @@
 #define UNICODE
 #define _UNICODE
 #define WIN32_LEAN_AND_MEAN
+#define _WIN32_WINNT _WIN32_WINNT_VISTA
+#define WINVER _WIN32_WINNT
 #include <windows.h>
 #include <tchar.h>
 #include <d3d10.h>
