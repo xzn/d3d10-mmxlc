@@ -4,3 +4,4 @@ common/d3dcompiler_common.c
 common/d3dcompiler_common.h
 drivers/d3d10_base.c
 drivers_font/d3d10_font.c
+drivers_shader/slang_reflection.cpp
