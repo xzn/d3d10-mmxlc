@@ -14,6 +14,9 @@ public:
     std::vector<BYTE> log_frame_hotkey;
     std::atomic_bool interp = false;
     std::atomic_bool linear = false;
+    std::atomic_bool linear_test_updated = false;
+    UINT linear_test_width = 0;
+    UINT linear_test_height = 0;
     std::atomic_bool enhanced = false;
     std::string slang_shader_2d;
     std::atomic_bool slang_shader_2d_updated = false;

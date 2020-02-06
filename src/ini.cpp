@@ -387,6 +387,11 @@ if constexpr (ENABLE_LOGGER) {
         GET_SET_CONFIG_BOOL_VALUE(linear);
         GET_SET_CONFIG_BOOL_VALUE(enhanced);
 
+#define UPDATED_VAR linear_test_updated
+        GET_SET_CONFIG_UINT_VALUE(linear_test_width);
+        GET_SET_CONFIG_UINT_VALUE(linear_test_height);
+#undef UPDATED_VAR
+
 if constexpr (ENABLE_SLANG_SHADER) {
         GET_SET_CONFIG_UTF8_VALUE_KEY(slang_shader, slang_shader_2d);
         GET_SET_CONFIG_UTF8_VALUE(slang_shader_snes);

@@ -33,12 +33,12 @@ retroarch_obj := $(call retroarch_fun,OBJ) deps/glslang/glslang.o
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
 retroarch_dir := $(sort $(dir $(retroarch_obj)))
 retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN $(call retroarch_fun,DEFINES) -DENABLE_HLSL -DHAVE_GLSLANG -DHAVE_SPIRV_CROSS -IRetroArch/RetroArch/libretro-common/include -IRetroArch/RetroArch/libretro-common/include/compat/zlib -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
-retroarch_cc = $(cc) $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) $(retroarch_flg) -Werror=implicit-function-declaration
-retroarch_cxx = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
+retroarch_cc = $(cc) $(color_opt) -c -MMD -MP -o $@ $< $(dbg_opt) $(lto_opt) $(retroarch_flg) -Werror=implicit-function-declaration
+retroarch_cxx = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(dbg_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
 src := $(wildcard src/*.cpp)
 obj := $(src:src/%.cpp=obj/%.o)
 dir := $(sort $(dir $(obj)))
-cxx_all = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(o3_opt) $(lto_opt)
+cxx_all = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(dbg_opt) $(lto_opt)
 obj_all := $(obj) $(smhasher_obj) $(HLSLcc_obj) $(cbstring_obj) $(imgui_obj) $(minhook_obj) $(spirv_obj) $(glslang_obj) $(retroarch_obj)
 dir_all := $(sort $(dir $(obj_all)))
 dep_all := $(obj_all:%.o=%.d)
@@ -50,21 +50,21 @@ else
 	color_opt :=
 endif
 
-ifeq ($(o3),0)
-	o3_opt := -Og -fno-inline -fno-early-inlining -g
-	# o3_opt += -g3 -ggdb -ggdb3
-	# o3_opt += -fvar-tracking -gvariable-location-views -ginternal-reset-location-views -ginline-points -D_GLIBCXX_DEBUG
-	# o3_opt += -fno-merge-debug-strings -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
+ifeq ($(dbg),1)
+	dbg_opt := -Og -fno-inline -fno-early-inlining -g
+	# dbg_opt += -g3 -ggdb -ggdb3
+	# dbg_opt += -fvar-tracking -gvariable-location-views -ginternal-reset-location-views -ginline-points -D_GLIBCXX_DEBUG
+	# dbg_opt += -fno-merge-debug-strings -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 	lto := 0
 	dll_dbg := $(dll:%.dll=%.dbg)
 else
-	o3_opt := -O2 -DNDEBUG -s
+	dbg_opt := -O2 -DNDEBUG -s
 endif
 
-ifeq ($(lto),0)
-	lto_opt :=
-else
+ifeq ($(lto),1)
 	lto_opt := -flto
+else
+	lto_opt :=
 endif
 
 glslang_ln := glslang/glslang.cpp glslang/glslang.hpp
@@ -85,7 +85,7 @@ $(dll_dbg): $(dll)
 	$(cross_prefix)objcopy --only-keep-debug $< $@
 
 $(dll): $(obj_all) dinput8.def
-	$(cxx) $(color_opt) -o $@ $+ $(o3_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
+	$(cxx) $(color_opt) -o $@ $+ $(dbg_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
 
 $(glslang_ln): glslang/%: RetroArch/RetroArch/deps/glslang/%
 	ln -sr $< $@
@@ -118,13 +118,13 @@ obj/HLSLcc/%.o: HLSLcc/src/%.cpp | $(HLSLcc_dir)
 	$(cxx_all) -IHLSLcc -IHLSLcc/include -IHLSLcc/src/internal_includes -IHLSLcc/src/cbstring -IHLSLcc/src -Wno-deprecated-declarations
 
 obj/cbstring/%.o: HLSLcc/src/cbstring/%.c | $(cbstring_dir)
-	$(cc) $(color_opt) -c -MMD -MP -o $@ $< $(o3_opt) $(lto_opt) -IHLSLcc/src/cbstring
+	$(cc) $(color_opt) -c -MMD -MP -o $@ $< $(dbg_opt) $(lto_opt) -IHLSLcc/src/cbstring
 
 obj/imgui/%.o: imgui/%.cpp | $(imgui_dir)
 	$(cxx_all) -Iimgui
 
 obj/minhook/%.o: minhook/src/%.c | $(minhook_dir)
-	$(cc) $(color_opt) -c -MMD -MP -o $@ $< -std=c11 -masm=intel $(o3_opt)
+	$(cc) $(color_opt) -c -MMD -MP -o $@ $< -std=c11 -masm=intel $(dbg_opt)
 
 obj/SPIRV-Cross/%.o: SPIRV-Cross/%.cpp | $(spirv_dir)
 	$(cxx_all)

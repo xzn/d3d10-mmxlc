@@ -994,9 +994,21 @@ class MyID3D10Device::Impl {
     bool render_interp = false;
     bool render_linear = false;
     bool render_enhanced = false;
+    UINT linear_test_width = 0;
+    UINT linear_test_height = 0;
 
     void update_config() {
         if (!config) return;
+        
+        if (config->linear_test_updated) {
+            config->begin_config();
+            
+            linear_test_width = config->linear_test_width;
+            linear_test_height = config->linear_test_height;
+            
+            config->linear_test_updated = false;
+            config->end_config();
+        }
 
 #define GET_SET_CONFIG_BOOL(v, m) do { \
     bool v = config->v; \
@@ -1549,6 +1561,18 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
 
     friend class LogItem<LinearFilterConditions>;
 
+#define MAX_LINEAR_RTVS 32
+    struct LinearRtv {
+        UINT width;
+        UINT height;
+        ID3D10RenderTargetView *rtv;
+        ~LinearRtv() {
+            if (rtv) rtv->Release();
+            rtv = NULL;
+        }
+    };
+    std::deque<LinearRtv> linear_rtvs;
+
     bool linear_restore = false;
     bool stream_out = false;
     bool stream_out_available() {
@@ -1595,9 +1619,23 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
             linear_conditions.alpha_discard ==
                 PIXEL_SHADER_ALPHA_DISCARD::EQUAL
         ) {
-            if (render_linear) {
-                inner->PSSetSamplers(0, MAX_SAMPLERS, sss);
-                linear_restore = true;
+            if (render_linear && linear_conditions.texs_descs.size()) {
+                UINT width = linear_conditions.texs_descs[0]->Width;
+                UINT height = linear_conditions.texs_descs[0]->Height;
+                
+                if (
+                    !(
+                        (width == 512 || width == 256) &&
+                        height == 256
+                    ) &&
+                    !(
+                        width == linear_test_width &&
+                        height == linear_test_height
+                    )
+                ) {
+                    inner->PSSetSamplers(0, MAX_SAMPLERS, sss);
+                    linear_restore = true;
+                }
             }
             if (LOG_STARTED && stream_out_available()) {
                 inner->GSSetShader(cached_vs->get_sogs());
