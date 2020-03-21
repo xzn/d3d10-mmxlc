@@ -27,12 +27,11 @@ glslang_src := $(wildcard glslang/glslang/glslang/GenericCodeGen/*.cpp) $(wildca
 glslang_obj := $(glslang_src:glslang/glslang/%.cpp=obj/glslang/%.o)
 glslang_dir := $(sort $(dir $(glslang_obj)))
 retroarch_fun = $(shell make -f RetroArch/RetroArch/Makefile.common $$'--eval=_print-var:\n\t@echo $$($1)' _print-var $(retroarch_def))
-retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_LANGEXTRA=1 HAVE_D3D10=1 HAVE_SLANG=1 HAVE_BUILTINZLIB=1 HAVE_RTGA=1 HAVE_RPNG=1 HAVE_RJPEG=1 HAVE_RBMP=1
-# retroarch_def += HAVE_DINPUT=1 HAVE_GDI=1 HAVE_MENU=1
-retroarch_obj := $(call retroarch_fun,OBJ) deps/glslang/glslang.o
+retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_LANGEXTRA=1 HAVE_D3D10=1 HAVE_SLANG=1 HAVE_GLSLANG=1 HAVE_BUILTINZLIB=1 HAVE_RTGA=1 HAVE_RPNG=1 HAVE_RJPEG=1 HAVE_RBMP=1 HAVE_VIDEO_LAYOUT=1
+retroarch_obj := $(call retroarch_fun,OBJ)
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
 retroarch_dir := $(sort $(dir $(retroarch_obj)))
-retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN $(call retroarch_fun,DEFINES) -DENABLE_HLSL -DHAVE_GLSLANG -DHAVE_SPIRV_CROSS -IRetroArch/RetroArch/libretro-common/include -IRetroArch/RetroArch/libretro-common/include/compat/zlib -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
+retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN $(call retroarch_fun,DEFINES) -DENABLE_HLSL -DHAVE_SPIRV_CROSS -IRetroArch/RetroArch/libretro-common/include -IRetroArch/RetroArch/libretro-common/include/compat/zlib -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
 retroarch_cc = $(cc) $(color_opt) -c -MMD -MP -o $@ $< $(dbg_opt) $(lto_opt) $(retroarch_flg) -Werror=implicit-function-declaration
 retroarch_cxx = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(dbg_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
 src := $(wildcard src/*.cpp)
@@ -67,8 +66,7 @@ else
 	lto_opt :=
 endif
 
-glslang_ln := glslang/glslang.cpp glslang/glslang.hpp
-retroarch_ln := RetroArch/gfx/common/d3d10_common.c RetroArch/gfx/common/d3dcompiler_common.c RetroArch/gfx/drivers_font/d3d10_font.c
+retroarch_ln := RetroArch/gfx/common/d3d10_common.c RetroArch/gfx/common/d3dcompiler_common.c RetroArch/gfx/drivers_display/gfx_display_d3d10.c RetroArch/gfx/drivers_font/d3d10_font.c
 retroarch_base_ln := RetroArch/gfx/drivers/d3d10_base.c
 retroarch_hdr := RetroArch/gfx/common/d3d10_common.h RetroArch/gfx/common/d3dcompiler_common.h
 retroarch_hdr_src := $(retroarch_hdr:RetroArch/%.h=RetroArch/RetroArch/%.h)
@@ -86,9 +84,6 @@ $(dll_dbg): $(dll)
 
 $(dll): $(obj_all) dinput8.def
 	$(cxx) $(color_opt) -o $@ $+ $(dbg_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
-
-$(glslang_ln): glslang/%: RetroArch/RetroArch/deps/glslang/%
-	ln -sr $< $@
 
 $(retroarch_ln): RetroArch/%: RetroArch/RetroArch/%
 	ln -sr $< $@
@@ -146,9 +141,6 @@ obj/RetroArch/%.o: RetroArch/%.cpp | $(retroarch_dir)
 
 obj/RetroArch/%.o: RetroArch/RetroArch/%.cpp | $(retroarch_dir)
 	$(retroarch_cxx)
-
-obj/RetroArch/deps/glslang/glslang.o: glslang/glslang.cpp | $(retroarch_dir)
-	$(retroarch_cxx) -IRetroArch/RetroArch/deps/glslang -Iglslang/glslang
 
 obj/RetroArch/%.o: RetroArch/RetroArch/%.rc | $(retroarch_dir)
 	$(cross_prefix)windres -o $@ $<

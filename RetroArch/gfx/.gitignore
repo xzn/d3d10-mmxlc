@@ -3,5 +3,6 @@ common/d3d10_common.h
 common/d3dcompiler_common.c
 common/d3dcompiler_common.h
 drivers/d3d10_base.c
+drivers_display/gfx_display_d3d10.c
 drivers_font/d3d10_font.c
 drivers_shader/slang_reflection.cpp
