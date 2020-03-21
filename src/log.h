@@ -194,7 +194,14 @@ class Logger {
 
     void log_assign();
     void log_sep();
-    void log_fun_name(LPCSTR n);
+
+    template<size_t N>
+    void log_fun_name(LPCSTR (&n)[N]) {
+        for (size_t i = 0; i < N; ++i) {
+            log_item(n[i]);
+        }
+    }
+
     void log_fun_begin();
     template<class T>
     void log_fun_arg(LPCSTR n, T &&v) {
@@ -253,8 +260,8 @@ class Logger {
         log_assign();
         log_item(std::forward<T>(v));
     }
-    template<class... Ts>
-    void log_fun_name_begin(LPCSTR n, Ts && ... as) {
+    template<class... Ts, size_t N>
+    void log_fun_name_begin(LPCSTR (&n)[N], Ts && ... as) {
         log_fun_name(n);
         log_fun_begin();
         log_fun_args(std::forward<Ts>(as)...);
@@ -506,10 +513,10 @@ public:
     bool get_started();
     void next_frame();
 
-    template<class... Ts>
-    void log_fun(std::string &&n, Ts &&... as) {
+    template<class... Ts, size_t N>
+    void log_fun(LPCSTR (&n)[N], Ts &&... as) {
         if (log_begin()) {
-            log_fun_name_begin(n.c_str(), std::forward<Ts>(as)...);
+            log_fun_name_begin(n, std::forward<Ts>(as)...);
             log_end();
         }
     }
@@ -598,8 +605,8 @@ extern Logger *default_logger;
 #if ENABLE_LOGGER
 
 #define LOG_STARTED ((LOGGER) && (LOGGER)->get_started())
-#define LOG_FUN(_, ...) do { if LOG_STARTED (LOGGER)->log_fun(std::string(__FILE__) + ":" + __func__, ## __VA_ARGS__); } while (0)
-#define LOG_MFUN_DEF(n, ...) do { if LOG_STARTED (LOGGER)->log_fun(std::string(#n "::") + __func__, LOG_ARG(this), ## __VA_ARGS__); } while (0)
+#define LOG_FUN(_, ...) do { if LOG_STARTED { LPCSTR __name[] = {__FILE__, ":", __func__}; (LOGGER)->log_fun(__name, ## __VA_ARGS__); } } while (0)
+#define LOG_MFUN_DEF(n, ...) do { if LOG_STARTED { LPCSTR __name[] = {#n "::", __func__}; (LOGGER)->log_fun(__name, LOG_ARG(this), ## __VA_ARGS__); } } while (0)
 
 #else
 

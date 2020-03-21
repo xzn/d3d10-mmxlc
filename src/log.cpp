@@ -256,10 +256,6 @@ void Logger::log_sep() {
     log_item(", ");
 }
 
-void Logger::log_fun_name(LPCSTR n) {
-    log_item(n);
-}
-
 void Logger::log_fun_begin() {
     log_item('(');
 }
