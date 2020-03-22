@@ -31,7 +31,7 @@ retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_LANGEXTRA=1 HAVE_D
 retroarch_obj := $(call retroarch_fun,OBJ)
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
 retroarch_dir := $(sort $(dir $(retroarch_obj)))
-retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN $(call retroarch_fun,DEFINES) -DENABLE_HLSL -DHAVE_SPIRV_CROSS -IRetroArch/RetroArch/libretro-common/include -IRetroArch/RetroArch/libretro-common/include/compat/zlib -I. -Iglslang -ISPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
+retroarch_flg := -DRARCH_INTERNAL -DHAVE_MAIN $(call retroarch_fun,DEFINES) -DENABLE_HLSL -DHAVE_SPIRV_CROSS -IRetroArch/RetroArch/libretro-common/include -IRetroArch/RetroArch/libretro-common/include/compat/zlib -I. -isystem glslang -isystem glslang/glslang -isystem SPIRV-Cross -IRetroArch/RetroArch -IRetroArch/RetroArch/deps
 retroarch_cc = $(cc) $(color_opt) -c -MMD -MP -o $@ $< $(dbg_opt) $(lto_opt) $(retroarch_flg) -Werror=implicit-function-declaration
 retroarch_cxx = $(cxx) $(color_opt) -c -MMD -MP -o $@ $< -std=c++17 $(dbg_opt) $(lto_opt) -D__STDC_CONSTANT_MACROS $(retroarch_flg)
 src := $(wildcard src/*.cpp)
