@@ -50,8 +50,9 @@ else
 endif
 
 ifeq ($(dbg),1)
-	dbg_opt := -Og -fno-inline -fno-early-inlining -g
+	dbg_opt := -Og -g
 	# dbg_opt += -g3 -ggdb -ggdb3
+	# dbg_opt += -fno-inline -fno-early-inlining
 	# dbg_opt += -fvar-tracking -gvariable-location-views -ginternal-reset-location-views -ginline-points -D_GLIBCXX_DEBUG
 	# dbg_opt += -fno-merge-debug-strings -fno-eliminate-unused-debug-types -fno-eliminate-unused-debug-symbols
 	lto := 0

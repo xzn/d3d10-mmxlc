@@ -283,7 +283,6 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION) {
 
 IUNKNOWN_IMPL(MyIDXGISwapChain, IDXGISwapChain)
 
-
 void MyIDXGISwapChain::set_overlay(Overlay *overlay) {
     impl->set_overlay(this, overlay);
 }

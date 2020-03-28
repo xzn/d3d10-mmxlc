@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <tchar.h>
 #include <d3d10.h>
+#include <dinput.h>
 #define VK_VALUE_BEGIN 1
 #define VK_VALUE_END ((BYTE)-1)
 

@@ -1,5 +1,6 @@
 #include "dinput8_dll.h"
 #include "dxgiswapchain.h"
+#include "directinput8a.h"
 #include "overlay.h"
 #include "conf.h"
 #include "log.h"
@@ -24,7 +25,18 @@ DEFINE_PROC(HRESULT, DirectInput8Create, (
     HRESULT ret = pDirectInput8Create ?
         pDirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter) :
         E_NOTIMPL;
-    LOG_FUN(_, ret);
+    LOG_FUN(_,
+        LOG_ARG(hinst),
+        LOG_ARG(dwVersion),
+        LOG_ARG(riidltf),
+        ret
+    );
+
+    if (ret == S_OK) {
+        new MyIDirectInput8A(
+            (IDirectInput8A **)ppvOut
+        );
+    }
     return ret;
 }
 

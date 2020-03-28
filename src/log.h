@@ -184,6 +184,21 @@ struct MyID3D10Resource_Logger {
     explicit MyID3D10Resource_Logger(const ID3D10Resource *);
 };
 
+struct DI8DEVCLASS_Logger {
+    DWORD a;
+    explicit DI8DEVCLASS_Logger(DWORD);
+};
+
+struct DI8DEVTYPE_Logger {
+    DWORD a;
+    explicit DI8DEVTYPE_Logger(DWORD);
+};
+
+struct DIEDFL_Logger {
+    DWORD a;
+    explicit DIEDFL_Logger(DWORD);
+};
+
 class Logger {
     class Impl;
     Impl *impl;
@@ -451,6 +466,9 @@ if constexpr (std::is_enum_v<T>) {
     void log_item(const MyID3D10RenderTargetView *a);
     void log_item(const MyID3D10DepthStencilView *a);
     void log_item(MyID3D10Resource_Logger a);
+    void log_item(DI8DEVCLASS_Logger a);
+    void log_item(DI8DEVTYPE_Logger a);
+    void log_item(DIEDFL_Logger a);
     void log_item(const D3D10_BLEND_DESC *a);
     void log_item(D3D10_BLEND a);
     void log_item(D3D10_BLEND_OP a);
