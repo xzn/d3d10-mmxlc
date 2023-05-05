@@ -26,7 +26,7 @@ spirv_dir := $(sort $(dir $(spirv_obj)))
 glslang_src := $(wildcard glslang/glslang/glslang/GenericCodeGen/*.cpp) $(wildcard glslang/glslang/glslang/MachineIndependent/*.cpp) $(wildcard glslang/glslang/glslang/MachineIndependent/preprocessor/*.cpp) glslang/glslang/glslang/OSDependent/Windows/ossource.cpp $(wildcard glslang/glslang/hlsl/*.cpp) $(wildcard glslang/glslang/OGLCompilersDLL/*.cpp) $(wildcard glslang/glslang/SPIRV/*.cpp)
 glslang_obj := $(glslang_src:glslang/glslang/%.cpp=obj/glslang/%.o)
 glslang_dir := $(sort $(dir $(glslang_obj)))
-retroarch_fun = $(shell make -f RetroArch/RetroArch/Makefile.common $$'--eval=_print-var:\n\t@echo $$($1)' _print-var $(retroarch_def))
+retroarch_fun = $(shell make -sf RetroArch/RetroArch/Makefile.common $$'--eval=_print-var:\n\t@echo $$($1)' _print-var $(retroarch_def))
 retroarch_def := GIT_VERSION= HAVE_LIBRETRODB=0 OS=Win32 HAVE_LANGEXTRA=1 HAVE_D3D10=1 HAVE_SLANG=1 HAVE_GLSLANG=1 HAVE_BUILTINZLIB=1 HAVE_RTGA=1 HAVE_RPNG=1 HAVE_RJPEG=1 HAVE_RBMP=1 HAVE_VIDEO_LAYOUT=1
 retroarch_obj := $(call retroarch_fun,OBJ)
 retroarch_obj := $(addprefix obj/RetroArch/,$(retroarch_obj))
