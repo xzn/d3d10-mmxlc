@@ -23,6 +23,7 @@ public:
     SIZE_T get_bytecode_length() const;
     const std::string &get_source() const;
     PIXEL_SHADER_ALPHA_DISCARD get_alpha_discard() const;
+    bool get_tex_has_lut() const;
     const std::vector<UINT> &get_texcoord_sampler_map() const;
     const std::vector<std::tuple<std::string, std::string>> &get_uniform_list() const;
 

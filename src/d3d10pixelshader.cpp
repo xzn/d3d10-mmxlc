@@ -16,6 +16,7 @@ class MyID3D10PixelShader::Impl {
         PIXEL_SHADER_ALPHA_DISCARD::UNKNOWN;
     std::vector<UINT> texcoord_sampler_map;
     std::vector<std::tuple<std::string, std::string>> uniform_list;
+    bool tex_has_lut = false;
 
     Impl(
         ID3D10PixelShader **inner,
@@ -38,6 +39,9 @@ class MyID3D10PixelShader::Impl {
             source.find("CBROPTestPS.fAlphaRef>=") != std::string::npos ?
                 PIXEL_SHADER_ALPHA_DISCARD::LESS_OR_EQUAL :
             PIXEL_SHADER_ALPHA_DISCARD::NONE
+        ),
+        tex_has_lut(
+            source.find("tClutMap") != std::string::npos
         )
     {
 if constexpr (ENABLE_LOGGER) {
@@ -110,6 +114,7 @@ DWORD MyID3D10PixelShader::get_bytecode_hash() const { return impl->bytecode_has
 SIZE_T MyID3D10PixelShader::get_bytecode_length() const { return impl->bytecode_length; }
 const std::string &MyID3D10PixelShader::get_source() const { return impl->source; }
 PIXEL_SHADER_ALPHA_DISCARD MyID3D10PixelShader::get_alpha_discard() const { return impl->alpha_discard; }
+bool MyID3D10PixelShader::get_tex_has_lut() const { return impl->tex_has_lut; }
 const std::vector<UINT> &
 MyID3D10PixelShader::get_texcoord_sampler_map() const { return impl->texcoord_sampler_map; }
 const std::vector<std::tuple<std::string, std::string>> &

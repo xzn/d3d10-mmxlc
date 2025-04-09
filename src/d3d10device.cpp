@@ -999,13 +999,13 @@ class MyID3D10Device::Impl {
 
     void update_config() {
         if (!config) return;
-        
+
         if (config->linear_test_updated) {
             config->begin_config();
-            
+
             linear_test_width = config->linear_test_width;
             linear_test_height = config->linear_test_height;
-            
+
             config->linear_test_updated = false;
             config->end_config();
         }
@@ -1555,6 +1555,7 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
 
     struct LinearFilterConditions {
         PIXEL_SHADER_ALPHA_DISCARD alpha_discard;
+        bool tex_has_lut;
         std::vector<const D3D10_SAMPLER_DESC *> samplers_descs;
         std::vector<const D3D10_TEXTURE2D_DESC *> texs_descs;
     } linear_conditions = {};
@@ -1589,9 +1590,12 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
         linear_conditions = {};
         if (!render_linear && !LOG_STARTED) return;
 
-        if (cached_ps)
+        if (cached_ps) {
             linear_conditions.alpha_discard =
                 cached_ps->get_alpha_discard();
+            linear_conditions.tex_has_lut =
+                cached_ps->get_tex_has_lut();
+        }
 
         ID3D10SamplerState *sss[MAX_SAMPLERS] = {};
         auto sss_inner = sss;
@@ -1617,17 +1621,13 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
         }
         if (
             linear_conditions.alpha_discard ==
-                PIXEL_SHADER_ALPHA_DISCARD::EQUAL
+                PIXEL_SHADER_ALPHA_DISCARD::EQUAL &&
+            linear_conditions.tex_has_lut
         ) {
             if (render_linear && linear_conditions.texs_descs.size()) {
                 UINT width = linear_conditions.texs_descs[0]->Width;
                 UINT height = linear_conditions.texs_descs[0]->Height;
-                
                 if (
-                    !(
-                        (width == 512 || width == 256) &&
-                        height == 256
-                    ) &&
                     !(
                         width == linear_test_width &&
                         height == linear_test_height

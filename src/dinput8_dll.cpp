@@ -80,7 +80,7 @@ DEFINE_PROC(HRESULT, DllUnregisterServer, ()) {
     }
 }
 
-DEFINE_PROC(LPVOID, GetdfDIJoystick, ()) {
+DEFINE_PROC(LPCDIDATAFORMAT, GetdfDIJoystick, ()) {
     LOG_FUN();
     if (pGetdfDIJoystick) {
         return pGetdfDIJoystick();
