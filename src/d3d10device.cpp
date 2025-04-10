@@ -49,7 +49,8 @@
 
 namespace {
 
-bool almost_equal(UINT a, UINT b) { return (a > b ? a - b : b - a) <= 1; }
+template<typename T>
+bool almost_equal(T a, T b) { return (a > b ? a - b : b - a) <= 1; }
 
 UINT64 xorshift128p_state[2] = {};
 
@@ -979,9 +980,9 @@ class MyID3D10Device::Impl {
         UINT vertex_stride;
         UINT vertex_offset;
     } filter_state = {};
-    bool filter = false;
+    bool can_filter = false;
+    bool need_filter = false;
     void clear_filter() {
-        filter = false;
         if (filter_state.srv) filter_state.srv->Release();
         if (filter_state.rtv_tex) filter_state.rtv_tex->Release();
         if (filter_state.ps) filter_state.ps->Release();
@@ -1746,6 +1747,8 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
 
     void present() {
         clear_filter();
+        can_filter = need_filter;
+        need_filter = false;
         update_config();
         ++frame_count;
     }
@@ -1775,6 +1778,7 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
     void resize_buffers(UINT width, UINT height) {
         render_size.resize(width, height);
         clear_filter();
+        can_filter = need_filter = false;
         update_config();
         filter_temp_init();
         frame_count = 0;
@@ -1985,7 +1989,7 @@ if constexpr (ENABLE_SLANG_SHADER) {
 
         auto psss = *cached_pssss;
         if (!psss) goto end;
-        filter_next = filter && psss == filter_state.psss;
+        filter_next = need_filter && psss == filter_state.psss;
 
         if (!srv) goto end;
 
@@ -1999,6 +2003,21 @@ if constexpr (ENABLE_SLANG_SHADER) {
         bool x4 = false;
         bool x6 = false;
         D3D10_TEXTURE2D_DESC &srv_tex_desc = srv_tex->get_desc();
+
+        if (filter_next && !(
+            render_vp.TopLeftY == 0.0f && render_vp.TopLeftX > 0.0f &&
+            almost_equal(
+                render_vp.TopLeftX * 2.0f + render_vp.Width,
+                (FLOAT)render_size.sc_width) &&
+            render_vp.Height == (FLOAT)render_size.sc_height
+        )) {
+            DWORD ps_hash = cached_ps ? cached_ps->get_bytecode_hash() : 0;
+            if (ps_hash == 0x319c1f85) // x challenge double boss intro
+                filter_next = need_filter = false;
+            if (ps_hash == 0x4e589bcc); // x challenge double boss warning
+        }
+
+        filter_next &= can_filter;
         if (filter_next) {
             x8 = false;
         } else if (
@@ -2302,15 +2321,17 @@ if constexpr (ENABLE_SLANG_SHADER) {
             filter_state.srv = srv; srv->AddRef();
             filter_state.rtv_tex = rtv_tex; rtv_tex->AddRef();
             if (filter_state.t1) {
-                if (filter_ss) filter = filter_next = true;
-                else if (render_interp) filter = true;
+                if (filter_ss) need_filter = filter_next = true;
+                else if (render_interp) need_filter = true;
             } else {
-                if (render_interp) filter = filter_next = true;
+                if (render_interp) need_filter = filter_next = true;
             }
         }
     }
 end:
-        if (filter_next) goto done;
+        if (can_filter) {
+            if (filter_next) goto done;
+        }
     {
         DWORD bytecode_hash = cached_ps ?
             cached_ps->get_bytecode_hash() : 0;
