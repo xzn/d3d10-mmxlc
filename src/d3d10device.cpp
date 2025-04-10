@@ -2590,7 +2590,7 @@ void STDMETHODCALLTYPE MyID3D10Device::PSSetShader(
     );
     auto &cached_ps = impl->cached_ps;
     cached_ps = (MyID3D10PixelShader *)pPixelShader;
-    impl->inner->PSSetShader(cached_ps ? cached_ps->get_inner() : NULL);
+    impl->inner->PSSetShader(cached_ps ? cached_ps->get_repl(impl->inner, impl->overlay) : NULL);
 }
 
 void STDMETHODCALLTYPE MyID3D10Device::PSSetSamplers(

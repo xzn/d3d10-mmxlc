@@ -84,7 +84,7 @@ $(dll_dbg): $(dll)
 	$(cross_prefix)objcopy --only-keep-debug $< $@
 
 $(dll): $(obj_all) dinput8.def
-	$(cxx) $(color_opt) -o $@ $+ $(dbg_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid
+	$(cxx) $(color_opt) -o $@ $+ $(dbg_opt) $(lto_opt) -shared -static -Werror -Wno-odr -Wno-lto-type-mismatch -Wl,--enable-stdcall-fixup -ld3dcompiler_47 -luuid -lmsimg32 -lhid -lsetupapi -lgdi32 -lcomdlg32 -ldinput8 -lole32 -ldxguid -lshlwapi -ld3d10
 
 $(retroarch_ln): RetroArch/%: RetroArch/RetroArch/%
 	ln -sr $< $@

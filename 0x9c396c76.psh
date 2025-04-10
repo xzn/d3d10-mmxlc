@@ -1,0 +1,69 @@
+sampler SSGSIndex : register(s0);
+sampler SSGSClut : register(s1);
+Texture2D<float4> tBaseMap : register(t0);
+Texture2D<float4> tClutMap : register(t1);
+
+cbuffer CBROPTest
+{
+    float fAlphaRef;
+    float fStencilRef;
+    float fDepthBias;
+    float fAlphaToCoverageScale;
+    float fGlobalTransparency;
+};
+
+struct PS_Input
+{
+    float4 position : SV_Position;
+    float4 texCoord0 : TEXCOORD0;
+    float4 texCoord1 : TEXCOORD1;
+};
+
+float4 getTexel(float2 coord0, float4 coord1, bool a)
+{
+    float4 base = tBaseMap.Sample(SSGSIndex, coord0);
+    float y = base.a * (255.0 / 16.0);
+    float x = frac(y);
+    y = floor(y);
+    x = x + 1.0 / 32.0;
+    y = (y + 0.5) * (1.0 / 16.0);
+    float4 clut = tClutMap.Sample(SSGSClut, float2(x, y));
+    clut = clut * coord1;
+    clut = clut + clut;
+    if (a && clut.a == fAlphaRef) {
+        discard;
+    }
+    float4 cluta = clut * coord1.wwww;
+    cluta = lerp(clut, cluta, float4(1.0, 1.0, 1.0 ,1.0) < coord1.wwww);
+    cluta.a = clut.a;
+    return cluta;
+}
+
+float2 descale(float2 scaled)
+{
+    return clamp((scaled) / float2(511.0, 511.0), float2(0.0, 0.0), float2(1.0, 1.0));
+}
+
+float4 main(PS_Input input) : SV_TARGET
+{
+    float2 coord = input.texCoord1.xy;
+    float2 scaled = coord * float2(511.0, 511.0);
+    float2 e = scaled /* + float2(0.5, 0.5) */;
+    float2 c = floor(e);
+    float2 d = frac(e);
+
+    float2 c_aa = descale(c + float2(-0.5, -0.5));
+    float2 c_ab = descale(c + float2(0.5, -0.5));
+    float2 c_ba = descale(c + float2(-0.5, 0.5));
+    float2 c_bb = descale(c + float2(0.5, 0.5));
+
+    getTexel(coord, input.texCoord0, 1);
+    float4 aa = getTexel(c_aa, input.texCoord0, 0);
+    float4 ab = getTexel(c_ab, input.texCoord0, 0);
+    float4 ba = getTexel(c_ba, input.texCoord0, 0);
+    float4 bb = getTexel(c_bb, input.texCoord0, 0);
+
+    float4 a = lerp(aa, ab, d.x);
+    float4 b = lerp(ba, bb, d.x);
+    return lerp(a, b, d.y);
+}

@@ -3,6 +3,7 @@
 
 #include "main.h"
 #include "d3d10devicechild.h"
+#include "overlay.h"
 
 enum class PIXEL_SHADER_ALPHA_DISCARD {
     UNKNOWN,
@@ -26,6 +27,7 @@ public:
     bool get_tex_has_lut() const;
     const std::vector<UINT> &get_texcoord_sampler_map() const;
     const std::vector<std::tuple<std::string, std::string>> &get_uniform_list() const;
+    ID3D10PixelShader *get_repl(ID3D10Device *dev, OverlayPtr ov);
 
     MyID3D10PixelShader(
         ID3D10PixelShader **inner,
