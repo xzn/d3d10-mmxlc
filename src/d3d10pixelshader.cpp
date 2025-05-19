@@ -260,4 +260,8 @@ reset_shader:
     return get_inner();
 }
 
+bool MyID3D10PixelShader::get_has_repl() const {
+    return impl->inner == impl->repl;
+}
+
 std::unordered_map<ID3D10PixelShader *, MyID3D10PixelShader *> cached_pss_map;

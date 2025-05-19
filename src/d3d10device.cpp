@@ -45,7 +45,8 @@
 #define SO_B_LEN (sizeof(float) * 4 * 4 * 6 * 100)
 #define MAX_SAMPLERS 16
 #define MAX_SHADER_RESOURCES 128
-#define MAX_CONSTANT_BUFFERS 15
+#define MAX_CONSTANT_BUFFERS  14
+#define TEX_DIMS_CB_INDEX 13
 
 namespace {
 
@@ -960,6 +961,13 @@ class MyID3D10Device::Impl {
     OverlayPtr overlay = {NULL};
     Config *config = NULL;
 
+    ID3D10Buffer *tex_dims_cb = NULL;
+    struct {
+        float width;
+        float height;
+        float paddings[2];
+    } tex_dims = {};
+
     d3d10_video_t *d3d10_2d = NULL;
     d3d10_video_t *d3d10_snes = NULL;
     d3d10_video_t *d3d10_psone = NULL;
@@ -1785,6 +1793,57 @@ if constexpr (ENABLE_CUSTOM_RESOLUTION > 1) {
     }
 
     void set_render_vp() {
+        if (cached_ps && cached_ps->get_has_repl()) {
+#if 0
+#define OV overlay
+#else
+#define OV(...)
+#endif
+            const auto &cached_pssrv = cached_pssrvs[0];
+            if (cached_pssrv) {
+                const auto &srv_desc = cached_pssrv->get_desc();
+                if (srv_desc.ViewDimension != D3D10_SRV_DIMENSION_TEXTURE2D) {
+                    OV("srv tex not 2d");
+                    return;
+                }
+                const auto &tex_2d = (MyID3D10Texture2D *)cached_pssrv->get_resource();
+                const auto &desc = tex_2d->get_desc();
+
+                if (true || desc.Width != tex_dims.width || desc.Height != tex_dims.height) {
+                    tex_dims.width = desc.Width;
+                    tex_dims.height = desc.Height;
+
+                    std::ostringstream oss;
+                    oss << tex_dims.width << "x" << tex_dims.height;
+                    OV(oss.str());
+
+                    if (!tex_dims_cb) {
+                        D3D10_BUFFER_DESC cb_desc = {};
+                        cb_desc.ByteWidth = sizeof(tex_dims);
+                        cb_desc.BindFlags = D3D10_BIND_CONSTANT_BUFFER;
+                        D3D10_SUBRESOURCE_DATA cb_data = {};
+                        cb_data.pSysMem = &tex_dims;
+                        HRESULT ret = inner->CreateBuffer(&cb_desc, &cb_data, &tex_dims_cb);
+                        if (ret != S_OK || !tex_dims_cb) {
+                            std::ostringstream oss;
+                            oss << "cb create failed: " << ret;
+                            OV(oss.str());
+                            return;
+                        }
+                        inner->PSSetConstantBuffers(TEX_DIMS_CB_INDEX, 1, &tex_dims_cb);
+                        OV("cb set");
+                    } else {
+                        inner->UpdateSubresource(tex_dims_cb, 0, NULL, &tex_dims, 0, 0);
+                        OV("cb updated");
+                        inner->PSSetConstantBuffers(TEX_DIMS_CB_INDEX, 1, &tex_dims_cb);
+                    }
+                }
+            } else {
+                OV("no srv");
+            }
+        }
+#undef OV
+
 if constexpr (ENABLE_CUSTOM_RESOLUTION) {
         if (need_render_vp) {
             if (!is_render_vp) {
@@ -1887,6 +1946,8 @@ if constexpr (ENABLE_LOGGER) {
         if (so_bt) so_bt->Release();
         if (so_bs) so_bs->Release();
         if (so_q) so_q->Release();
+
+        if (tex_dims_cb) tex_dims_cb->Release();
     }
 
     void Draw(

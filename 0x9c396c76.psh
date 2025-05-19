@@ -3,13 +3,18 @@ sampler SSGSClut : register(s1);
 Texture2D<float4> tBaseMap : register(t0);
 Texture2D<float4> tClutMap : register(t1);
 
-cbuffer CBROPTest
+cbuffer CBROPTest : register(b0)
 {
     float fAlphaRef;
     float fStencilRef;
     float fDepthBias;
     float fAlphaToCoverageScale;
     float fGlobalTransparency;
+};
+
+cbuffer t0_dims_cb : register(b13)
+{
+    float2 t0_dims;
 };
 
 struct PS_Input
@@ -41,14 +46,14 @@ float4 getTexel(float2 coord0, float4 coord1, bool a)
 
 float2 descale(float2 scaled)
 {
-    return clamp((scaled) / float2(511.0, 511.0), float2(0.0, 0.0), float2(1.0, 1.0));
+    return clamp((scaled) / t0_dims, float2(0.0, 0.0), float2(1.0, 1.0));
 }
 
 float4 main(PS_Input input) : SV_TARGET
 {
     float2 coord = input.texCoord1.xy;
-    float2 scaled = coord * float2(511.0, 511.0);
-    float2 e = scaled /* + float2(0.5, 0.5) */;
+    float2 scaled = coord * t0_dims;
+    float2 e = scaled + float2(0.5, 0.5);
     float2 c = floor(e);
     float2 d = frac(e);
 

@@ -28,6 +28,7 @@ public:
     const std::vector<UINT> &get_texcoord_sampler_map() const;
     const std::vector<std::tuple<std::string, std::string>> &get_uniform_list() const;
     ID3D10PixelShader *get_repl(ID3D10Device *dev, OverlayPtr ov);
+    bool get_has_repl() const;
 
     MyID3D10PixelShader(
         ID3D10PixelShader **inner,
