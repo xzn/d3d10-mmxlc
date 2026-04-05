@@ -4951,3 +4951,25 @@ void STDMETHODCALLTYPE MyID3D10Device::GetTextFilterSize(
         pHeight
     );
 }
+
+HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateShaderResourceView1(
+    ID3D10Resource *pResource,
+    const D3D10_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+    ID3D10ShaderResourceView1 **ppSRView
+) {
+    LOG_MFUN();
+    return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MyID3D10Device::CreateBlendState1(
+    const D3D10_BLEND_DESC1 *pBlendStateDesc,
+    ID3D10BlendState1 **ppBlendState
+) {
+    LOG_MFUN();
+    return E_NOTIMPL;
+}
+
+D3D10_FEATURE_LEVEL1 STDMETHODCALLTYPE MyID3D10Device::GetFeatureLevel() {
+    LOG_MFUN();
+    return (D3D10_FEATURE_LEVEL1)0;
+}

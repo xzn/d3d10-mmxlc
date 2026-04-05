@@ -7,7 +7,7 @@
 class Overlay;
 class Config;
 
-class MyID3D10Device : public ID3D10Device {
+class MyID3D10Device : public ID3D10Device1 {
     template<class T> friend struct LogItem;
     class Impl;
     Impl *impl;
@@ -555,6 +555,21 @@ public:
         UINT *pWidth,
         UINT *pHeight
     );
+
+    // ID3D10Device1
+
+    virtual HRESULT STDMETHODCALLTYPE CreateShaderResourceView1(
+        ID3D10Resource *pResource,
+        const D3D10_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+        ID3D10ShaderResourceView1 **ppSRView
+    );
+
+    virtual HRESULT STDMETHODCALLTYPE CreateBlendState1(
+        const D3D10_BLEND_DESC1 *pBlendStateDesc,
+        ID3D10BlendState1 **ppBlendState
+    );
+
+    virtual D3D10_FEATURE_LEVEL1 STDMETHODCALLTYPE GetFeatureLevel();
 };
 
 #endif

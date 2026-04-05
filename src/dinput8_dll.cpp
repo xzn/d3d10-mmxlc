@@ -89,6 +89,21 @@ DEFINE_PROC(LPCDIDATAFORMAT, GetdfDIJoystick, ()) {
     }
 }
 
+static void set_default_sc(
+    DXGI_SWAP_CHAIN_DESC *pSwapChainDesc,
+    IDXGISwapChain **ppSwapChain,
+    ID3D10Device **ppDevice
+) {
+    auto sc = new MyIDXGISwapChain(
+        pSwapChainDesc,
+        ppSwapChain,
+        ppDevice
+    );
+    default_config->hwnd = pSwapChainDesc->OutputWindow;
+    sc->set_overlay(default_overlay);
+    sc->set_config(default_config);
+}
+
 // d3d10.dll
 
 DEFINE_PROC(HRESULT, D3D10CreateDeviceAndSwapChain, (
@@ -114,17 +129,94 @@ DEFINE_PROC(HRESULT, D3D10CreateDeviceAndSwapChain, (
             ppDevice
         );
         if (ret == S_OK) {
-            auto sc = new MyIDXGISwapChain(
-                pSwapChainDesc,
-                ppSwapChain,
-                ppDevice
-            );
-            default_config->hwnd = pSwapChainDesc->OutputWindow;
-            sc->set_overlay(default_overlay);
-            sc->set_config(default_config);
+            set_default_sc(pSwapChainDesc, ppSwapChain, ppDevice);
         }
     }
     LOG_FUN(_, ret);
+    return ret;
+}
+
+DEFINE_PROC(HRESULT, D3D10CreateDevice, (
+    IDXGIAdapter      *pAdapter,
+    D3D10_DRIVER_TYPE DriverType,
+    HMODULE           Software,
+    UINT              Flags,
+    UINT              SDKVersion,
+    ID3D10Device      **ppDevice
+)) {
+    HRESULT ret = E_NOTIMPL;
+    if (pD3D10CreateDevice) {
+        ret = pD3D10CreateDevice(
+            pAdapter,
+            DriverType,
+            Software,
+            Flags,
+            SDKVersion,
+            ppDevice
+        );
+        if (ret == S_OK) {
+        }
+    }
+    LOG_FUN(_, ret);
+    return ret;
+}
+
+DEFINE_PROC(HRESULT, D3D10CreateDeviceAndSwapChain1, (
+    IDXGIAdapter         *pAdapter,
+    D3D10_DRIVER_TYPE    DriverType,
+    HMODULE              Software,
+    UINT                 Flags,
+    D3D10_FEATURE_LEVEL1 HardwareLevel,
+    UINT                 SDKVersion,
+    DXGI_SWAP_CHAIN_DESC *pSwapChainDesc,
+    IDXGISwapChain       **ppSwapChain,
+    ID3D10Device1        **ppDevice
+)) {
+    HRESULT ret = E_NOTIMPL;
+    if (pD3D10CreateDeviceAndSwapChain1) {
+        ret = pD3D10CreateDeviceAndSwapChain1(
+            pAdapter,
+            DriverType,
+            Software,
+            Flags,
+            HardwareLevel,
+            SDKVersion,
+            pSwapChainDesc,
+            ppSwapChain,
+            ppDevice
+        );
+        if (ret == S_OK) {
+            set_default_sc(pSwapChainDesc, ppSwapChain, (ID3D10Device **)ppDevice);
+        }
+    }
+    LOG_FUN(_, LOG_ARG_TYPE(HardwareLevel, NumHexLogger), ret);
+    return ret;
+}
+
+DEFINE_PROC(HRESULT, D3D10CreateDevice1, (
+    IDXGIAdapter         *pAdapter,
+    D3D10_DRIVER_TYPE    DriverType,
+    HMODULE              Software,
+    UINT                 Flags,
+    D3D10_FEATURE_LEVEL1 HardwareLevel,
+    UINT                 SDKVersion,
+    ID3D10Device1        **ppDevice
+)) {
+    HRESULT ret = E_NOTIMPL;
+    if (pD3D10CreateDevice1) {
+        ret = pD3D10CreateDevice1(
+            pAdapter,
+            DriverType,
+            Software,
+            Flags,
+            HardwareLevel,
+            SDKVersion,
+            ppDevice
+        );
+        if (ret == S_OK) {
+        }
+    }
+    LOG_FUN(_, LOG_ARG_TYPE(HardwareLevel, NumHexLogger), ret);
     return ret;
 }
 
@@ -135,7 +227,10 @@ HMODULE base_dll;
 bool MinHook_Initialized;
 
 void minhook_init() {
+    if (MinHook_Initialized)
+        return;
     if (MH_Initialize() != MH_OK) {
+        MessageBoxA(NULL, "MH_Initialize", NULL, 0);
     } else {
         MinHook_Initialized = true;
 #define HOOK_PROC(m, n) do { \
@@ -146,12 +241,17 @@ void minhook_init() {
         (LPVOID *)&p ## n, \
         &pTarget \
     ) != MH_OK) { \
+        MessageBoxA(NULL, "MH_CreateHookApiEx " #n, NULL, 0); \
     } else { \
         if (MH_EnableHook(pTarget) != MH_OK) { \
+            MessageBoxA(NULL, "MH_EnableHook " #n, NULL, 0); \
         } \
     } \
 } while (0)
         HOOK_PROC(d3d10, D3D10CreateDeviceAndSwapChain);
+        HOOK_PROC(d3d10, D3D10CreateDevice);
+        HOOK_PROC(d3d10_1, D3D10CreateDeviceAndSwapChain1);
+        HOOK_PROC(d3d10_1, D3D10CreateDevice1);
     }
 }
 

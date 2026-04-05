@@ -62,7 +62,7 @@ else
 endif
 
 ifeq ($(lto),1)
-	lto_opt := -flto
+	lto_opt := -flto=auto
 else
 	lto_opt :=
 endif
@@ -105,7 +105,7 @@ $(retroarch_mod_sen): RetroArch/gfx/drivers_shader/slang_reflection.diff | $(ret
 	touch $@
 
 obj/%.o: src/%.cpp | $(dir)
-	$(cxx_all) -Werror -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
+	$(cxx_all) -Wno-deprecated-declarations -Werror -Wall $(retroarch_flg) -IRetroArch/RetroArch/gfx/common
 
 obj/smhasher/%.o: smhasher/%.cpp | $(smhasher_dir)
 	$(cxx_all)
